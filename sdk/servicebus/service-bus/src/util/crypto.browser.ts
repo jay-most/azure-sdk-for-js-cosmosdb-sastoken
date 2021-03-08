@@ -1,6 +1,12 @@
 // Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+/**
+ * @internal
+ */
 export async function generateKey(secret: string, stringToSign: string): Promise<string> {
   const key = await window.crypto.subtle.importKey(
     "raw",
@@ -19,7 +25,10 @@ export async function generateKey(secret: string, stringToSign: string): Promise
   return result;
 }
 
-function convertToUint8Array(value: string) {
+/**
+ * @internal
+ */
+function convertToUint8Array(value: string): Uint8Array {
   const arr = new Uint8Array(value.length);
   for (let i = 0; i < value.length; i++) {
     arr[i] = value.charCodeAt(i);
@@ -29,7 +38,9 @@ function convertToUint8Array(value: string) {
 
 /**
  * Encodes a byte array in base64 format.
- * @param value the Uint8Aray to encode
+ * @param value - the Uint8Aray to encode
+ * @internal
+ *
  */
 function encodeByteArray(value: Uint8Array): string {
   let str = "";

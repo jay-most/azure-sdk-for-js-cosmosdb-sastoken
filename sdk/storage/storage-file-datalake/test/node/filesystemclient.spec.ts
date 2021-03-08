@@ -1,5 +1,8 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { TokenCredential } from "@azure/core-http";
-import { record } from "@azure/test-utils-recorder";
+import { record, Recorder } from "@azure/test-utils-recorder";
 import * as assert from "assert";
 
 import {
@@ -15,7 +18,7 @@ import { assertClientUsesTokenCredential } from "../utils/assert";
 describe("DataLakeFileSystemClient Node.js only", () => {
   let fileSystemName: string;
   let fileSystemClient: DataLakeFileSystemClient;
-  let recorder: any;
+  let recorder: Recorder;
 
   beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
@@ -27,7 +30,7 @@ describe("DataLakeFileSystemClient Node.js only", () => {
 
   afterEach(async function() {
     await fileSystemClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("getAccessPolicy", async () => {

@@ -1,5 +1,15 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+export interface PartitionKeyRangePropertiesNames {
+  // Partition Key Range Constants
+  MinInclusive: "minInclusive";
+  MaxExclusive: "maxExclusive";
+  Id: "id";
+}
+
 /**
- * @ignore
+ * @hidden
  */
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
@@ -121,6 +131,7 @@ export const Constants = {
     // Offer header
     OfferType: "x-ms-offer-type",
     OfferThroughput: "x-ms-offer-throughput",
+    AutoscaleSettings: "x-ms-cosmos-offer-autopilot-settings",
 
     // Custom RUs/minute headers
     DisableRUPerMinuteUsage: "x-ms-documentdb-disable-ru-per-minute-usage",
@@ -142,7 +153,14 @@ export const Constants = {
     ScriptLogResults: "x-ms-documentdb-script-log-results",
 
     // Multi-Region Write
-    ALLOW_MULTIPLE_WRITES: "x-ms-cosmos-allow-tentative-writes"
+    ALLOW_MULTIPLE_WRITES: "x-ms-cosmos-allow-tentative-writes",
+
+    // Bulk/Batch header
+    IsBatchRequest: "x-ms-cosmos-is-batch-request",
+    IsBatchAtomic: "x-ms-cosmos-batch-atomic",
+
+    // Cache Refresh header
+    ForceRefresh: "x-ms-force-refresh"
   },
 
   // GlobalDB related constants
@@ -191,7 +209,7 @@ export const Constants = {
     MinInclusive: "minInclusive",
     MaxExclusive: "maxExclusive",
     Id: "id"
-  },
+  } as PartitionKeyRangePropertiesNames,
 
   QueryRangeConstants: {
     // Partition Key Range Constants
@@ -207,7 +225,7 @@ export const Constants = {
 };
 
 /**
- * @ignore
+ * @hidden
  */
 export enum ResourceType {
   none = "",
@@ -225,7 +243,7 @@ export enum ResourceType {
 }
 
 /**
- * @ignore
+ * @hidden
  */
 export enum HTTPMethod {
   get = "GET",
@@ -235,7 +253,7 @@ export enum HTTPMethod {
 }
 
 /**
- * @ignore
+ * @hidden
  */
 export enum OperationType {
   Create = "create",
@@ -244,5 +262,6 @@ export enum OperationType {
   Delete = "delete",
   Read = "read",
   Query = "query",
-  Execute = "execute"
+  Execute = "execute",
+  Batch = "batch"
 }

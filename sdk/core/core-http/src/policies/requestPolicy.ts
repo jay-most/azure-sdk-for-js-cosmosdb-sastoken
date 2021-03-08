@@ -1,33 +1,33 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import { HttpOperationResponse } from "../httpOperationResponse";
 import { HttpPipelineLogger } from "../httpPipelineLogger";
 import { HttpPipelineLogLevel } from "../httpPipelineLogLevel";
-import { WebResource } from "../webResource";
+import { WebResourceLike } from "../webResource";
 
 /**
  * Creates a new RequestPolicy per-request that uses the provided nextPolicy.
  */
 export type RequestPolicyFactory = {
-  create(nextPolicy: RequestPolicy, options: RequestPolicyOptions): RequestPolicy;
+  create(nextPolicy: RequestPolicy, options: RequestPolicyOptionsLike): RequestPolicy;
 };
 
 export interface RequestPolicy {
-  sendRequest(httpRequest: WebResource): Promise<HttpOperationResponse>;
+  sendRequest(httpRequest: WebResourceLike): Promise<HttpOperationResponse>;
 }
 
 export abstract class BaseRequestPolicy implements RequestPolicy {
   protected constructor(
     readonly _nextPolicy: RequestPolicy,
-    readonly _options: RequestPolicyOptions
+    readonly _options: RequestPolicyOptionsLike
   ) {}
 
-  public abstract sendRequest(webResource: WebResource): Promise<HttpOperationResponse>;
+  public abstract sendRequest(webResource: WebResourceLike): Promise<HttpOperationResponse>;
 
   /**
    * Get whether or not a log with the provided log level should be logged.
-   * @param logLevel The log level of the log that will be logged.
+   * @param logLevel - The log level of the log that will be logged.
    * @returns Whether or not a log with the provided log level should be logged.
    */
   public shouldLog(logLevel: HttpPipelineLogLevel): boolean {
@@ -37,12 +37,32 @@ export abstract class BaseRequestPolicy implements RequestPolicy {
   /**
    * Attempt to log the provided message to the provided logger. If no logger was provided or if
    * the log level does not meat the logger's threshold, then nothing will be logged.
-   * @param logLevel The log level of this log.
-   * @param message The message of this log.
+   * @param logLevel - The log level of this log.
+   * @param message - The message of this log.
    */
   public log(logLevel: HttpPipelineLogLevel, message: string): void {
     this._options.log(logLevel, message);
   }
+}
+
+/**
+ * Optional properties that can be used when creating a RequestPolicy.
+ */
+export interface RequestPolicyOptionsLike {
+  /**
+   * Get whether or not a log with the provided log level should be logged.
+   * @param logLevel - The log level of the log that will be logged.
+   * @returns Whether or not a log with the provided log level should be logged.
+   */
+  shouldLog(logLevel: HttpPipelineLogLevel): boolean;
+
+  /**
+   * Attempt to log the provided message to the provided logger. If no logger was provided or if
+   * the log level does not meet the logger's threshold, then nothing will be logged.
+   * @param logLevel - The log level of this log.
+   * @param message - The message of this log.
+   */
+  log(logLevel: HttpPipelineLogLevel, message: string): void;
 }
 
 /**
@@ -53,7 +73,7 @@ export class RequestPolicyOptions {
 
   /**
    * Get whether or not a log with the provided log level should be logged.
-   * @param logLevel The log level of the log that will be logged.
+   * @param logLevel - The log level of the log that will be logged.
    * @returns Whether or not a log with the provided log level should be logged.
    */
   public shouldLog(logLevel: HttpPipelineLogLevel): boolean {
@@ -66,9 +86,9 @@ export class RequestPolicyOptions {
 
   /**
    * Attempt to log the provided message to the provided logger. If no logger was provided or if
-   * the log level does not meat the logger's threshold, then nothing will be logged.
-   * @param logLevel The log level of this log.
-   * @param message The message of this log.
+   * the log level does not meet the logger's threshold, then nothing will be logged.
+   * @param logLevel - The log level of this log.
+   * @param message - The message of this log.
    */
   public log(logLevel: HttpPipelineLogLevel, message: string): void {
     if (this._logger && this.shouldLog(logLevel)) {

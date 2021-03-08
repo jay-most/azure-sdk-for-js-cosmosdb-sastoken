@@ -1,19 +1,12 @@
 {
-  "name": "samplesmoketest",
+  "name": "smoke-tests",
   "version": "1.0.0",
   "description": "",
-  "main": "EventHubsTest.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "author": "",
+  "dependencies": {},
   "license": "ISC",
-  "dependencies": {
-    "@azure/cosmos": "dev",
-    "@azure/event-hubs": "dev",
-    "@azure/keyvault-secrets": "dev",
-    "@azure/storage-blob": "dev",
-    "@types/node": "^12.6.2",
-    "uuid": "^3.3.2"
+  "scripts": {
+    "smoke-test": "node run.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   }
 }

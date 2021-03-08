@@ -7,6 +7,7 @@
  */
 
 export {
+  AzureEntityResource,
   BaseResource,
   CognitiveServicesAccount,
   CognitiveServicesAccountApiProperties,
@@ -15,14 +16,29 @@ export {
   CognitiveServicesAccountListResult,
   CognitiveServicesAccountProperties,
   CognitiveServicesResourceAndSku,
+  Encryption,
   ErrorBody,
   ErrorModel,
+  Identity,
   IpRule,
+  KeyVaultProperties,
   MetricName,
   NetworkRuleSet,
+  PrivateEndpoint,
+  PrivateEndpointConnection,
+  PrivateEndpointConnectionProperties,
+  PrivateLinkResource,
+  PrivateLinkResourceProperties,
+  PrivateLinkServiceConnectionState,
+  ProxyResource,
   RegenerateKeyParameters,
+  Resource,
   Sku,
+  SkuCapability,
+  TrackedResource,
   Usage,
   UsagesResult,
+  UserAssignedIdentity,
+  UserOwnedStorage,
   VirtualNetworkRule
 } from "../models/mappers";

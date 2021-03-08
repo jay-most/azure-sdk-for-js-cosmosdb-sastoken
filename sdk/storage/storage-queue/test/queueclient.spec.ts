@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import { getQSU, getSASConnectionStringFromEnvironment } from "./utils";
 import * as dotenv from "dotenv";
@@ -6,7 +9,7 @@ import { TestTracer, setTracer, SpanGraph } from "@azure/core-tracing";
 import { URLBuilder, RestError } from "@azure/core-http";
 import { Recorder, record } from "@azure/test-utils-recorder";
 import { recorderEnvSetup } from "./utils/testutils.common";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("QueueClient", () => {
   let queueServiceClient: QueueServiceClient;
@@ -25,7 +28,7 @@ describe("QueueClient", () => {
 
   afterEach(async function() {
     await queueClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("setMetadata", async () => {
@@ -94,6 +97,38 @@ describe("QueueClient", () => {
       "Unable to extract queueName with provided information.",
       "Unexpected error caught: " + error
     );
+  });
+
+  it("exists", async () => {
+    assert.ok(await queueClient.exists());
+
+    const qClient = queueServiceClient.getQueueClient(recorder.getUniqueName(queueName));
+    assert.ok(!(await qClient.exists()));
+  });
+
+  it("createIfNotExists", async () => {
+    const res = await queueClient.createIfNotExists();
+    assert.ok(!res.succeeded);
+
+    const metadata = { key: "value" };
+    const res2 = await queueClient.createIfNotExists({ metadata });
+    assert.ok(!res2.succeeded);
+    assert.equal(res2.errorCode, "QueueAlreadyExists");
+
+    queueClient = queueServiceClient.getQueueClient(recorder.getUniqueName("queue2"));
+    const res3 = await queueClient.createIfNotExists();
+    assert.ok(res3.succeeded);
+  });
+
+  it("deleteIfExists", async () => {
+    const qClient = queueServiceClient.getQueueClient(recorder.getUniqueName(queueName));
+    const res = await qClient.deleteIfExists();
+    assert.ok(!res.succeeded);
+    assert.equal(res.errorCode, "QueueNotFound");
+
+    await qClient.create();
+    const res2 = await qClient.deleteIfExists();
+    assert.ok(res2.succeeded);
   });
 
   it("delete", (done) => {
@@ -165,7 +200,9 @@ describe("QueueClient", () => {
     const tracer = new TestTracer();
     setTracer(tracer);
     const rootSpan = tracer.startSpan("root");
-    await queueClient.getProperties({ tracingOptions: { spanOptions: { parent: rootSpan } } });
+    await queueClient.getProperties({
+      tracingOptions: { spanOptions: { parent: rootSpan.context() } }
+    });
     rootSpan.end();
 
     const rootSpans = tracer.getRootSpans();
@@ -199,8 +236,8 @@ describe("QueueClient", () => {
 });
 
 describe("QueueClient - Verify Name Properties", () => {
-  let queueName = "queueName";
-  let accountName = "myAccount";
+  const queueName = "queueName";
+  const accountName = "myAccount";
 
   function verifyNameProperties(url: string, accountName: string, queueName: string) {
     const newClient = new QueueClient(url);
@@ -242,5 +279,11 @@ describe("QueueClient - Verify Name Properties", () => {
       accountName,
       queueName
     );
+  });
+
+  it("verify custom endpoint without valid accountName", async () => {
+    const newClient = new QueueClient(`https://customdomain.com/${queueName}`);
+    assert.equal(newClient.accountName, "", "Account name is not the same as expected.");
+    assert.equal(newClient.name, queueName, "Queue name is not the same as the one provided.");
   });
 });

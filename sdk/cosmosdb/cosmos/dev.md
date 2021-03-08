@@ -30,7 +30,7 @@ available via `npm run-script`:
   clean
     rimraf lib
   lint
-    tslint --project tsconfig.json
+    eslint package.json api-extractor.json src samples --ext .ts
   format
     prettier --write --config .prettierrc.json "src/**/*.ts"
   check-format
@@ -85,7 +85,5 @@ You can also build via the configured tasks (`build` does a full build, and `com
 # Samples
 
 Build the SDK and make sure the tests run before you try any samples (they depend on the SDK)
-
-- [TodoApp](./samples/TodoApp)
 
 We recommend using [VS code's multi-root workspaces](https://code.visualstudio.com/docs/editor/multi-root-workspaces) for testing the samples, especially if you're using the samples to test the SDK. There is a `launch.json` for the samples thave have been updated and multi-root workspaces will show all `launch.json`s.

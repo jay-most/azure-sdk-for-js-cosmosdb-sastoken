@@ -1,10 +1,12 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
+/* eslint-disable-next-line @typescript-eslint/triple-slash-reference */
 /// <reference path="../dom-shim.d.ts" />
 
 export {
   WebResource,
+  WebResourceLike,
   HttpRequestBody,
   RequestPrepareOptions,
   HttpMethods,
@@ -14,7 +16,7 @@ export {
 } from "./webResource";
 export { DefaultHttpClient } from "./defaultHttpClient";
 export { HttpClient } from "./httpClient";
-export { HttpHeaders } from "./httpHeaders";
+export { HttpHeader, HttpHeaders, HttpHeadersLike, RawHttpHeaders } from "./httpHeaders";
 export { HttpOperationResponse, HttpResponse, RestResponse } from "./httpOperationResponse";
 export { HttpPipelineLogger } from "./httpPipelineLogger";
 export { HttpPipelineLogLevel } from "./httpPipelineLogLevel";
@@ -28,7 +30,8 @@ export {
 export {
   OperationParameter,
   OperationQueryParameter,
-  OperationURLParameter
+  OperationURLParameter,
+  ParameterPath
 } from "./operationParameter";
 export { OperationResponse } from "./operationResponse";
 export { OperationSpec } from "./operationSpec";
@@ -43,16 +46,14 @@ export {
 export { PipelineOptions, InternalPipelineOptions } from "./pipelineOptions";
 export { QueryCollectionFormat } from "./queryCollectionFormat";
 export { Constants } from "./util/constants";
-export {
-  BearerTokenAuthenticationPolicy,
-  bearerTokenAuthenticationPolicy
-} from "./policies/bearerTokenAuthenticationPolicy";
+export { bearerTokenAuthenticationPolicy } from "./policies/bearerTokenAuthenticationPolicy";
 export { LogPolicyOptions, logPolicy } from "./policies/logPolicy";
 export {
   BaseRequestPolicy,
   RequestPolicy,
   RequestPolicyFactory,
-  RequestPolicyOptions
+  RequestPolicyOptions,
+  RequestPolicyOptionsLike
 } from "./policies/requestPolicy";
 export { generateClientRequestIdPolicy } from "./policies/generateClientRequestIdPolicy";
 export { exponentialRetryPolicy, RetryOptions, RetryMode } from "./policies/exponentialRetryPolicy";
@@ -61,14 +62,21 @@ export { throttlingRetryPolicy } from "./policies/throttlingRetryPolicy";
 export { getDefaultProxySettings, proxyPolicy } from "./policies/proxyPolicy";
 export { redirectPolicy, RedirectOptions } from "./policies/redirectPolicy";
 export { keepAlivePolicy, KeepAliveOptions } from "./policies/keepAlivePolicy";
+export { disableResponseDecompressionPolicy } from "./policies/disableResponseDecompressionPolicy";
 export { signingPolicy } from "./policies/signingPolicy";
 export {
   userAgentPolicy,
   getDefaultUserAgentValue,
-  UserAgentOptions
+  UserAgentOptions,
+  TelemetryInfo
 } from "./policies/userAgentPolicy";
-export { deserializationPolicy, deserializeResponseBody } from "./policies/deserializationPolicy";
-export { tracingPolicy } from "./policies/tracingPolicy";
+export {
+  deserializationPolicy,
+  DeserializationOptions,
+  deserializeResponseBody,
+  DeserializationContentTypes
+} from "./policies/deserializationPolicy";
+export { tracingPolicy, TracingPolicyOptions } from "./policies/tracingPolicy";
 export {
   MapperType,
   SimpleMapperType,
@@ -106,9 +114,13 @@ export {
 export { URLBuilder, URLQuery } from "./url";
 export { AbortSignalLike } from "@azure/abort-controller";
 
+// legacy exports. Use core-tracing instead (and remove on next major version update of core-http).
+export { createSpanFunction, SpanConfig } from "./createSpanLegacy";
+
 // Credentials
 export { TokenCredential, GetTokenOptions, AccessToken, isTokenCredential } from "@azure/core-auth";
 export { AccessTokenCache, ExpiringAccessTokenCache } from "./credentials/accessTokenCache";
+export { AccessTokenRefresher } from "./credentials/accessTokenRefresher";
 export { BasicAuthenticationCredentials } from "./credentials/basicAuthenticationCredentials";
 export { ApiKeyCredentials, ApiKeyCredentialOptions } from "./credentials/apiKeyCredentials";
 export { ServiceClientCredentials } from "./credentials/serviceClientCredentials";
@@ -116,3 +128,5 @@ export { TopicCredentials } from "./credentials/topicCredentials";
 export { Authenticator } from "./credentials/credentials";
 
 export { parseXML, stringifyXML } from "./util/xml";
+export { XML_ATTRKEY, XML_CHARKEY, SerializerOptions } from "./util/serializer.common";
+import "@azure/core-asynciterator-polyfill";

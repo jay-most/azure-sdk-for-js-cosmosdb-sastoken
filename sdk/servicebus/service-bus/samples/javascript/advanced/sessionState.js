@@ -1,33 +1,31 @@
 /*
-Copyright (c) Microsoft Corporation. All rights reserved.
-Licensed under the MIT Licence.
+  Copyright (c) Microsoft Corporation. All rights reserved.
+  Licensed under the MIT Licence.
 
-This sample demonstrates usage of SessionState.
+  This sample demonstrates usage of SessionState.
 
-We take for example the context of an online shopping app and see how we can use Session State
-to implement the maintaining of shopping cart information completely on server side i.e.,
-remembering the users' shopped items even if they leave the site and return later.
+  We take for example the context of an online shopping app and see how we can use Session State
+  to implement the maintaining of shopping cart information completely on server side i.e.,
+  remembering the users' shopped items even if they leave the site and return later.
 
-The scenario in sample walks through user activity of two customers Alice and Bob.
-Alice adds 3 items to the shopping cart and checks out, whereas Bob adds 3 items and leaves without
-checking out to likely return later.
-The session state keeps track of the cart items accordingly.
+  The scenario in sample walks through user activity of two customers Alice and Bob.
+  Alice adds 3 items to the shopping cart and checks out, whereas Bob adds 3 items and leaves without
+  checking out to likely return later.
+  The session state keeps track of the cart items accordingly.
 
-Setup: To run this sample, you would need session enabled Queue/Subscription.
+  Setup: To run this sample, you would need session enabled Queue/Subscription.
 
-See https://docs.microsoft.com/en-us/azure/service-bus-messaging/message-sessions#message-session-state
-to learn about session state.
+  See https://docs.microsoft.com/azure/service-bus-messaging/message-sessions#message-session-state
+  to learn about session state.
 */
-
-const { ServiceBusClient, ReceiveMode } = require("@azure/service-bus");
-
+const { ServiceBusClient } = require("@azure/service-bus");
 // Load the .env file if it exists
 require("dotenv").config();
 
 // Define connection string and related Service Bus entity names here
-const connectionString = process.env.SERVICE_BUS_CONNECTION_STRING || "<connection string>";
-const queueName = process.env.QUEUE_NAME || "<queue name>";
-const sbClient = ServiceBusClient.createFromConnectionString(connectionString);
+const connectionString = process.env.SERVICEBUS_CONNECTION_STRING || "<connection string>";
+const userEventsQueueName = process.env.QUEUE_NAME_WITH_SESSIONS || "<queue name>";
+const sbClient = new ServiceBusClient(connectionString);
 
 async function main() {
   try {
@@ -40,37 +38,16 @@ async function main() {
 async function runScenario() {
   // User activity data for Alice and Bob
   const shoppingEventsDataAlice = [
-    {
-      event_name: "Add Item",
-      event_details: "Milk"
-    },
-    {
-      event_name: "Add Item",
-      event_details: "Bread"
-    },
-    {
-      event_name: "Add Item",
-      event_details: "Eggs"
-    },
-    {
-      event_name: "Checkout",
-      event_details: "Success"
-    }
+    { event_name: "Add Item", event_details: "Milk" },
+    { event_name: "Add Item", event_details: "Bread" },
+    { event_name: "Add Item", event_details: "Eggs" },
+    { event_name: "Checkout", event_details: "Success" }
   ];
 
   const shoppingEventsDataBob = [
-    {
-      event_name: "Add Item",
-      event_details: "Pencil"
-    },
-    {
-      event_name: "Add Item",
-      event_details: "Paper"
-    },
-    {
-      event_name: "Add Item",
-      event_details: "Stapler"
-    }
+    { event_name: "Add Item", event_details: "Pencil" },
+    { event_name: "Add Item", event_details: "Paper" },
+    { event_name: "Add Item", event_details: "Stapler" }
   ];
 
   // Simulating user events
@@ -99,14 +76,10 @@ async function runScenario() {
 }
 
 async function getSessionState(sessionId) {
-  // If receiving from a Subscription, use `createSubscriptionClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(userEventsQueueName);
+  // If receiving from a subscription you can use the acceptSession(topic, subscription, sessionId) overload
+  const sessionReceiver = await sbClient.acceptSession(userEventsQueueName, sessionId);
 
-  const sessionReceiver = queueClient.createReceiver(ReceiveMode.peekLock, {
-    sessionId: sessionId
-  });
-
-  const sessionState = await sessionReceiver.getState();
+  const sessionState = await sessionReceiver.getSessionState();
   if (sessionState) {
     // Get list of items
     console.log(`\nItems in cart for ${sessionId}: ${sessionState}\n`);
@@ -115,64 +88,60 @@ async function getSessionState(sessionId) {
   }
 
   await sessionReceiver.close();
-  await queueClient.close();
 }
 
 async function sendMessagesForSession(shoppingEvents, sessionId) {
-  // If sending to a Topic, use `createTopicClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(userEventsQueueName);
-  const sender = queueClient.createSender();
+  // createSender() can also be used to create a sender for a topic.
+  const sender = sbClient.createSender(userEventsQueueName);
 
   for (let index = 0; index < shoppingEvents.length; index++) {
     const message = {
       sessionId: sessionId,
       body: shoppingEvents[index],
-      label: "Shopping Step"
+      subject: "Shopping Step"
     };
-    await sender.send(message);
+    await sender.sendMessages(message);
   }
-  await queueClient.close();
+  await sender.close();
 }
 
 async function processMessageFromSession(sessionId) {
-  // If receiving from a Subscription, use `createSubscriptionClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(userEventsQueueName);
+  // If receiving from a subscription you can use the acceptSession(topic, subscription, sessionId) overload
+  const sessionReceiver = await sbClient.acceptSession(userEventsQueueName, sessionId);
 
-  const sessionReceiver = queueClient.createReceiver(ReceiveMode.peekLock, {
-    sessionId: sessionId
+  const messages = await sessionReceiver.receiveMessages(1, {
+    maxWaitTimeInMs: 10000
   });
-
-  const messages = await sessionReceiver.receiveMessages(1, 10);
 
   // Custom logic for processing the messages
   if (messages.length > 0) {
     // Update sessionState
     if (messages[0].body.event_name === "Checkout") {
       // Clear cart if customer exits, else retain items.
-      await sessionReceiver.setState(JSON.stringify([]));
+      await sessionReceiver.setSessionState(JSON.stringify([]));
     } else if (messages[0].body.event_name === "Add Item") {
       // Update cart if customer adds items and store it in session state.
-      const currentSessionState = await sessionReceiver.getState();
+      const currentSessionState = await sessionReceiver.getSessionState();
       let newSessionState = [];
       if (currentSessionState) {
         newSessionState = JSON.parse(currentSessionState);
       }
       newSessionState.push(messages[0].body.event_details);
-      await sessionReceiver.setState(JSON.stringify(newSessionState));
+      await sessionReceiver.setSessionState(JSON.stringify(newSessionState));
     }
 
     console.log(
       `Received message: Customer '${sessionReceiver.sessionId}': '${messages[0].body.event_name} ${messages[0].body.event_details}'`
     );
-    await messages[0].complete();
+    await sessionReceiver.completeMessage(messages[0]);
   } else {
     console.log(`No events were received for Customer: ${sessionId}\n`);
   }
 
   await sessionReceiver.close();
-  await queueClient.close();
 }
 
 main().catch((err) => {
   console.log("Error occurred: ", err);
+  process.exit(1);
 });

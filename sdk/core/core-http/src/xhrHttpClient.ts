@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import { AbortError } from "@azure/abort-controller";
 import { HttpClient } from "./httpClient";
-import { HttpHeaders } from "./httpHeaders";
-import { WebResource, TransferProgressEvent } from "./webResource";
+import { HttpHeaders, HttpHeadersLike } from "./httpHeaders";
+import { WebResourceLike, TransferProgressEvent } from "./webResource";
 import { HttpOperationResponse } from "./httpOperationResponse";
 import { RestError } from "./restError";
 
@@ -12,7 +12,7 @@ import { RestError } from "./restError";
  * A HttpClient implementation that uses XMLHttpRequest to send HTTP requests.
  */
 export class XhrHttpClient implements HttpClient {
-  public sendRequest(request: WebResource): Promise<HttpOperationResponse> {
+  public sendRequest(request: WebResourceLike): Promise<HttpOperationResponse> {
     const xhr = new XMLHttpRequest();
 
     if (request.proxySettings) {
@@ -25,7 +25,7 @@ export class XhrHttpClient implements HttpClient {
         return Promise.reject(new AbortError("The operation was aborted."));
       }
 
-      const listener = () => {
+      const listener = (): void => {
         xhr.abort();
       };
       abortSignal.addEventListener("abort", listener);
@@ -42,8 +42,12 @@ export class XhrHttpClient implements HttpClient {
     if (request.formData) {
       const formData = request.formData;
       const requestForm = new FormData();
-      const appendFormValue = (key: string, value: any) => {
-        if (value && value.hasOwnProperty("value") && value.hasOwnProperty("options")) {
+      const appendFormValue = (key: string, value: any): void => {
+        if (
+          value &&
+          Object.prototype.hasOwnProperty.call(value, "value") &&
+          Object.prototype.hasOwnProperty.call(value, "options")
+        ) {
           requestForm.append(key, value.value, value.options);
         } else {
           requestForm.append(key, value);
@@ -75,30 +79,16 @@ export class XhrHttpClient implements HttpClient {
     for (const header of request.headers.headersArray()) {
       xhr.setRequestHeader(header.name, header.value);
     }
-    xhr.responseType = request.streamResponseBody ? "blob" : "text";
+
+    xhr.responseType =
+      request.streamResponseStatusCodes?.size || request.streamResponseBody ? "blob" : "text";
 
     // tslint:disable-next-line:no-null-keyword
     xhr.send(request.body === undefined ? null : request.body);
 
-    if (request.streamResponseBody) {
+    if (xhr.responseType === "blob") {
       return new Promise((resolve, reject) => {
-        xhr.addEventListener("readystatechange", () => {
-          // Resolve as soon as headers are loaded
-          if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
-            const blobBody = new Promise<Blob>((resolve, reject) => {
-              xhr.addEventListener("load", () => {
-                resolve(xhr.response);
-              });
-              rejectOnTerminalEvent(request, xhr, reject);
-            });
-            resolve({
-              request,
-              status: xhr.status,
-              headers: parseHeaders(xhr),
-              blobBody
-            });
-          }
-        });
+        handleBlobResponse(xhr, request, resolve, reject);
         rejectOnTerminalEvent(request, xhr, reject);
       });
     } else {
@@ -117,10 +107,66 @@ export class XhrHttpClient implements HttpClient {
   }
 }
 
+function handleBlobResponse(
+  xhr: XMLHttpRequest,
+  request: WebResourceLike,
+  res: (value: HttpOperationResponse | PromiseLike<HttpOperationResponse>) => void,
+  rej: (reason?: any) => void
+): void {
+  xhr.addEventListener("readystatechange", () => {
+    // Resolve as soon as headers are loaded
+    if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+      if (request.streamResponseBody || request.streamResponseStatusCodes?.has(xhr.status)) {
+        const blobBody = new Promise<Blob>((resolve, reject) => {
+          xhr.addEventListener("load", () => {
+            resolve(xhr.response);
+          });
+          rejectOnTerminalEvent(request, xhr, reject);
+        });
+        res({
+          request,
+          status: xhr.status,
+          headers: parseHeaders(xhr),
+          blobBody
+        });
+      } else {
+        xhr.addEventListener("load", () => {
+          // xhr.response is of Blob type if the request is sent with xhr.responseType === "blob"
+          // but the status code is not one of the stream response status codes,
+          // so treat it as text and convert from Blob to text
+          if (xhr.response) {
+            // Blob.text() is not supported in IE so using FileReader instead
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              const text = e.target?.result as string;
+              res({
+                request,
+                status: xhr.status,
+                headers: parseHeaders(xhr),
+                bodyAsText: text
+              });
+            };
+            reader.onerror = function(_e) {
+              rej(reader.error);
+            };
+            reader.readAsText(xhr.response, "UTF-8");
+          } else {
+            res({
+              request,
+              status: xhr.status,
+              headers: parseHeaders(xhr)
+            });
+          }
+        });
+      }
+    }
+  });
+}
+
 function addProgressListener(
   xhr: XMLHttpRequestEventTarget,
   listener?: (progress: TransferProgressEvent) => void
-) {
+): void {
   if (listener) {
     xhr.addEventListener("progress", (rawEvent) =>
       listener({
@@ -131,7 +177,7 @@ function addProgressListener(
 }
 
 // exported locally for testing
-export function parseHeaders(xhr: XMLHttpRequest) {
+export function parseHeaders(xhr: XMLHttpRequest): HttpHeadersLike {
   const responseHeaders = new HttpHeaders();
   const headerLines = xhr
     .getAllResponseHeaders()
@@ -147,10 +193,10 @@ export function parseHeaders(xhr: XMLHttpRequest) {
 }
 
 function rejectOnTerminalEvent(
-  request: WebResource,
+  request: WebResourceLike,
   xhr: XMLHttpRequest,
   reject: (err: any) => void
-) {
+): void {
   xhr.addEventListener("error", () =>
     reject(
       new RestError(

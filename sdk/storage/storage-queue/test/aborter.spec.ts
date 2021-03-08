@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import { AbortController } from "@azure/abort-controller";
 
@@ -6,7 +9,7 @@ import { getQSU } from "./utils";
 import * as dotenv from "dotenv";
 import { recorderEnvSetup } from "./utils/testutils.common";
 import { Recorder, record } from "@azure/test-utils-recorder";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 // tslint:disable:no-empty
 describe("Aborter", () => {
@@ -23,7 +26,7 @@ describe("Aborter", () => {
   });
 
   afterEach(async function() {
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("should not abort after calling abort()", async () => {

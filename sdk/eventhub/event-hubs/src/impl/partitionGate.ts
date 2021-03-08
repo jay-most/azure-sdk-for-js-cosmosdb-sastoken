@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 /**
  * Used by EventHubConsumerClient to prevent accidentally spinning up multiple
@@ -10,7 +10,6 @@
  * continually steals/overwrites checkpointing and ownership with itself.
  *
  * @internal
- * @ignore
  */
 export class PartitionGate {
   private _partitions = new Set<string>();
@@ -19,11 +18,9 @@ export class PartitionGate {
    * Adds a partition, throwing an Error if there is a conflict with partitions (including "all")
    * that are already added.
    *
-   * @param partitionId A partition ID or the constant "all"
+   * @param partitionId - A partition ID or the constant "all"
    */
-  add(partitionId: string | "all") {
-    this._validatePartitionId(partitionId);
-
+  add(partitionId: string | "all"): void {
     if (
       (partitionId === "all" && this._partitions.size > 0) ||
       this._partitions.has(partitionId) ||
@@ -38,21 +35,9 @@ export class PartitionGate {
   /**
    * Removes a partition
    *
-   * @param partitionId A partition ID or the constant "all"
+   * @param partitionId - A partition ID or the constant "all"
    */
-  remove(partitionId: string | "all") {
+  remove(partitionId: string | "all"): void {
     this._partitions.delete(partitionId);
-  }
-
-  private _validatePartitionId(partitionId: string) {
-    if (partitionId === "all") {
-      return;
-    }
-
-    const partitionNumber = parseInt(partitionId, 10);
-
-    if (isNaN(partitionNumber)) {
-      throw new TypeError(`Invalid partition number ${partitionId}`);
-    }
   }
 }

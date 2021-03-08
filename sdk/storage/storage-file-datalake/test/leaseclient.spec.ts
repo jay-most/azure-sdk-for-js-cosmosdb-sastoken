@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { delay, record, Recorder } from "@azure/test-utils-recorder";
 import * as assert from "assert";
 import * as dotenv from "dotenv";
@@ -5,7 +8,7 @@ import * as dotenv from "dotenv";
 import { DataLakeFileClient, DataLakeDirectoryClient, DataLakeFileSystemClient } from "../src";
 import { getDataLakeServiceClient, recorderEnvSetup } from "./utils";
 
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("LeaseClient from FileSystem", () => {
   let fileSystemName: string;
@@ -23,7 +26,7 @@ describe("LeaseClient from FileSystem", () => {
 
   afterEach(async function() {
     await fileSystemClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("acquireLease", async () => {
@@ -143,7 +146,7 @@ describe("LeaseClient from File", () => {
   let fileSystemClient: DataLakeFileSystemClient;
   let fileName: string;
   let fileClient: DataLakeFileClient;
-  let recorder: any;
+  let recorder: Recorder;
 
   beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
@@ -158,7 +161,7 @@ describe("LeaseClient from File", () => {
 
   afterEach(async function() {
     await fileSystemClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("acquireLease", async () => {
@@ -266,7 +269,7 @@ describe("LeaseClient from Directory", () => {
   let fileSystemClient: DataLakeFileSystemClient;
   let directoryName: string;
   let directoryClient: DataLakeDirectoryClient;
-  let recorder: any;
+  let recorder: Recorder;
 
   beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
@@ -281,7 +284,7 @@ describe("LeaseClient from Directory", () => {
 
   afterEach(async function() {
     await fileSystemClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("acquireLease", async () => {

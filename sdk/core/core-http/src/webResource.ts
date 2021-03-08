@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
-import { HttpHeaders } from "./httpHeaders";
+import { HttpHeaders, HttpHeadersLike, isHttpHeadersLike } from "./httpHeaders";
 import { OperationSpec } from "./operationSpec";
 import { Mapper, Serializer } from "./serializer";
 import { generateUuid } from "./util/utils";
@@ -9,7 +9,8 @@ import { HttpOperationResponse } from "./httpOperationResponse";
 import { OperationResponse } from "./operationResponse";
 import { ProxySettings } from "./serviceClient";
 import { AbortSignalLike } from "@azure/abort-controller";
-import { SpanOptions } from "@opentelemetry/types";
+import { SpanOptions } from "@azure/core-tracing";
+import { SerializerOptions } from "./util/serializer.common";
 
 export type HttpMethods =
   | "GET"
@@ -37,23 +38,161 @@ export type TransferProgressEvent = {
   loadedBytes: number;
 };
 
+export interface WebResourceLike {
+  /**
+   * The URL being accessed by the request.
+   */
+  url: string;
+  /**
+   * The HTTP method to use when making the request.
+   */
+  method: HttpMethods;
+  /**
+   * The HTTP body contents of the request.
+   */
+  body?: any;
+  /**
+   * The HTTP headers to use when making the request.
+   */
+  headers: HttpHeadersLike;
+  /**
+   * @deprecated Use streamResponseStatusCodes property instead.
+   * Whether or not the body of the HttpOperationResponse should be treated as a stream.
+   */
+  streamResponseBody?: boolean;
+  /**
+   * A list of response status codes whose corresponding HttpOperationResponse body should be treated as a stream.
+   */
+  streamResponseStatusCodes?: Set<number>;
+  /**
+   * Whether or not the HttpOperationResponse should be deserialized. If this is undefined, then the
+   * HttpOperationResponse should be deserialized.
+   */
+  shouldDeserialize?: boolean | ((response: HttpOperationResponse) => boolean);
+  /**
+   * A function that returns the proper OperationResponse for the given OperationSpec and
+   * HttpOperationResponse combination. If this is undefined, then a simple status code lookup will
+   * be used.
+   */
+  operationResponseGetter?: (
+    operationSpec: OperationSpec,
+    response: HttpOperationResponse
+  ) => undefined | OperationResponse;
+  formData?: any;
+  /**
+   * A query string represented as an object.
+   */
+  query?: { [key: string]: any };
+  /**
+   * Used to parse the response.
+   */
+  operationSpec?: OperationSpec;
+  /**
+   * If credentials (cookies) should be sent along during an XHR.
+   */
+  withCredentials: boolean;
+  /**
+   * The number of milliseconds a request can take before automatically being terminated.
+   * If the request is terminated, an `AbortError` is thrown.
+   */
+  timeout: number;
+  /**
+   * Proxy configuration.
+   */
+  proxySettings?: ProxySettings;
+  /**
+   * If the connection should be reused.
+   */
+  keepAlive?: boolean;
+  /**
+   * Whether or not to decompress response according to Accept-Encoding header (node-fetch only)
+   */
+  decompressResponse?: boolean;
+  /**
+   * A unique identifier for the request. Used for logging and tracing.
+   */
+  requestId: string;
+
+  /**
+   * Used to abort the request later.
+   */
+  abortSignal?: AbortSignalLike;
+
+  /**
+   * Callback which fires upon upload progress.
+   */
+  onUploadProgress?: (progress: TransferProgressEvent) => void;
+
+  /** Callback which fires upon download progress. */
+  onDownloadProgress?: (progress: TransferProgressEvent) => void;
+
+  /**
+   * Options used to create a span when tracing is enabled.
+   */
+  spanOptions?: SpanOptions;
+
+  /**
+   * Validates that the required properties such as method, url, headers["Content-Type"],
+   * headers["accept-language"] are defined. It will throw an error if one of the above
+   * mentioned properties are not defined.
+   */
+  validateRequestProperties(): void;
+
+  /**
+   * Sets options on the request.
+   */
+  prepare(options: RequestPrepareOptions): WebResourceLike;
+  /**
+   * Clone this request object.
+   */
+  clone(): WebResourceLike;
+}
+
+export function isWebResourceLike(object: unknown): object is WebResourceLike {
+  if (object && typeof object === "object") {
+    const castObject = object as {
+      url: unknown;
+      method: unknown;
+      headers: unknown;
+      validateRequestProperties: unknown;
+      prepare: unknown;
+      clone: unknown;
+    };
+    if (
+      typeof castObject.url === "string" &&
+      typeof castObject.method === "string" &&
+      typeof castObject.headers === "object" &&
+      isHttpHeadersLike(castObject.headers) &&
+      typeof castObject.validateRequestProperties === "function" &&
+      typeof castObject.prepare === "function" &&
+      typeof castObject.clone === "function"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Creates a new WebResource object.
  *
  * This class provides an abstraction over a REST call by being library / implementation agnostic and wrapping the necessary
  * properties to initiate a request.
- *
- * @constructor
  */
-export class WebResource {
+export class WebResource implements WebResourceLike {
   url: string;
   method: HttpMethods;
   body?: any;
-  headers: HttpHeaders;
+  headers: HttpHeadersLike;
   /**
+   * @deprecated Use streamResponseStatusCodes property instead.
    * Whether or not the body of the HttpOperationResponse should be treated as a stream.
    */
   streamResponseBody?: boolean;
+  /**
+   * A list of status codes whose corresponding HttpOperationResponse body should be treated as a stream.
+   */
+  streamResponseStatusCodes?: Set<number>;
   /**
    * Whether or not the HttpOperationResponse should be deserialized. If this is undefined, then the
    * HttpOperationResponse should be deserialized.
@@ -75,6 +214,10 @@ export class WebResource {
   timeout: number;
   proxySettings?: ProxySettings;
   keepAlive?: boolean;
+  /**
+   * Whether or not to decompress response according to Accept-Encoding header (node-fetch only)
+   */
+  decompressResponse?: boolean;
   requestId: string;
 
   abortSignal?: AbortSignalLike;
@@ -93,9 +236,9 @@ export class WebResource {
   constructor(
     url?: string,
     method?: HttpMethods,
-    body?: any,
+    body?: unknown,
     query?: { [key: string]: any },
-    headers?: { [key: string]: any } | HttpHeaders,
+    headers?: { [key: string]: any } | HttpHeadersLike,
     streamResponseBody?: boolean,
     withCredentials?: boolean,
     abortSignal?: AbortSignalLike,
@@ -103,12 +246,15 @@ export class WebResource {
     onUploadProgress?: (progress: TransferProgressEvent) => void,
     onDownloadProgress?: (progress: TransferProgressEvent) => void,
     proxySettings?: ProxySettings,
-    keepAlive?: boolean
+    keepAlive?: boolean,
+    decompressResponse?: boolean,
+    streamResponseStatusCodes?: Set<number>
   ) {
     this.streamResponseBody = streamResponseBody;
+    this.streamResponseStatusCodes = streamResponseStatusCodes;
     this.url = url || "";
     this.method = method || "GET";
-    this.headers = headers instanceof HttpHeaders ? headers : new HttpHeaders(headers);
+    this.headers = isHttpHeadersLike(headers) ? headers : new HttpHeaders(headers);
     this.body = body;
     this.query = query;
     this.formData = undefined;
@@ -119,6 +265,7 @@ export class WebResource {
     this.onDownloadProgress = onDownloadProgress;
     this.proxySettings = proxySettings;
     this.keepAlive = keepAlive;
+    this.decompressResponse = decompressResponse;
     this.requestId = this.headers.get("x-ms-client-request-id") || generateUuid();
   }
 
@@ -138,15 +285,19 @@ export class WebResource {
 
   /**
    * Prepares the request.
-   * @param {RequestPrepareOptions} options Options to provide for preparing the request.
-   * @returns {WebResource} Returns the prepared WebResource (HTTP Request) object that needs to be given to the request pipeline.
+   * @param options - Options to provide for preparing the request.
+   * @returns Returns the prepared WebResource (HTTP Request) object that needs to be given to the request pipeline.
    */
   prepare(options: RequestPrepareOptions): WebResource {
     if (!options) {
       throw new Error("options object is required");
     }
 
-    if (options.method == undefined || typeof options.method.valueOf() !== "string") {
+    if (
+      options.method === undefined ||
+      options.method === null ||
+      typeof options.method.valueOf() !== "string"
+    ) {
       throw new Error("options.method must be a string.");
     }
 
@@ -157,8 +308,12 @@ export class WebResource {
     }
 
     if (
-      (options.pathTemplate == undefined || typeof options.pathTemplate.valueOf() !== "string") &&
-      (options.url == undefined || typeof options.url.valueOf() !== "string")
+      (options.pathTemplate === undefined ||
+        options.pathTemplate === null ||
+        typeof options.pathTemplate.valueOf() !== "string") &&
+      (options.url === undefined ||
+        options.url === null ||
+        typeof options.url.valueOf() !== "string")
     ) {
       throw new Error("Please provide exactly one of options.pathTemplate or options.url.");
     }
@@ -199,7 +354,7 @@ export class WebResource {
         baseUrl +
         (baseUrl.endsWith("/") ? "" : "/") +
         (pathTemplate.startsWith("/") ? pathTemplate.slice(1) : pathTemplate);
-      const segments = url.match(/({\w*\s*\w*})/gi);
+      const segments = url.match(/({[\w-]*\s*[\w-]*})/gi);
       if (segments && segments.length) {
         if (!pathParameters) {
           throw new Error(
@@ -309,9 +464,9 @@ export class WebResource {
       this.headers.set("Content-Type", "application/json; charset=utf-8");
     }
 
-    // set the request body. request.js automatically sets the Content-Length request header, so we need not set it explicilty
+    // set the request body. request.js automatically sets the Content-Length request header, so we need not set it explicitly
     this.body = options.body;
-    if (options.body != undefined) {
+    if (options.body !== undefined && options.body !== null) {
       // body as a stream special case. set the body as-is and check for some special request headers specific to sending a stream.
       if (options.bodyIsStream) {
         if (!this.headers.get("Transfer-Encoding")) {
@@ -347,7 +502,7 @@ export class WebResource {
 
   /**
    * Clone this WebResource HTTP request object.
-   * @returns {WebResource} The clone of this WebResource HTTP request object.
+   * @returns The clone of this WebResource HTTP request object.
    */
   clone(): WebResource {
     const result = new WebResource(
@@ -363,7 +518,9 @@ export class WebResource {
       this.onUploadProgress,
       this.onDownloadProgress,
       this.proxySettings,
-      this.keepAlive
+      this.keepAlive,
+      this.decompressResponse,
+      this.streamResponseStatusCodes
     );
 
     if (this.formData) {
@@ -404,15 +561,15 @@ export interface RequestPrepareOptions {
    * The "object" format should be used when you want to skip url encoding. While using the object format,
    * the object must have a property named value which provides the "query-parameter-value".
    * Example:
-   *    - query-parameter-value in "object" format: { "query-parameter-name": { value: "query-parameter-value", skipUrlEncoding: true } }
-   *    - query-parameter-value in "string" format: { "query-parameter-name": "query-parameter-value"}.
+   *    - query-parameter-value in "object" format: `{ "query-parameter-name": { value: "query-parameter-value", skipUrlEncoding: true } }`
+   *    - query-parameter-value in "string" format: `{ "query-parameter-name": "query-parameter-value"}`.
    * Note: "If options.url already has some query parameters, then the value provided in options.queryParameters will be appended to the url.
    */
   queryParameters?: { [key: string]: any | ParameterValue };
   /**
    * The path template of the request url. Either provide the "url" or provide the "pathTemplate" in
    * the options object. Both the options are mutually exclusive.
-   * Example: "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Storage/storageAccounts/{accountName}"
+   * Example: `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Storage/storageAccounts/{accountName}`
    */
   pathTemplate?: string;
   /**
@@ -428,8 +585,8 @@ export interface RequestPrepareOptions {
    * The "object" format should be used when you want to skip url encoding. While using the object format,
    * the object must have a property named value which provides the "path-parameter-value".
    * Example:
-   *    - path-parameter-value in "object" format: { "path-parameter-name": { value: "path-parameter-value", skipUrlEncoding: true } }
-   *    - path-parameter-value in "string" format: { "path-parameter-name": "path-parameter-value" }.
+   *    - path-parameter-value in "object" format: `{ "path-parameter-name": { value: "path-parameter-value", skipUrlEncoding: true } }`
+   *    - path-parameter-value in "string" format: `{ "path-parameter-name": "path-parameter-value" }`.
    */
   pathParameters?: { [key: string]: any | ParameterValue };
   formData?: { [key: string]: any };
@@ -462,7 +619,7 @@ export interface RequestPrepareOptions {
   /**
    * Provides information on how to deserialize the response body.
    */
-  deserializationMapper?: object;
+  deserializationMapper?: Record<string, unknown>;
   /**
    * Indicates whether this method should JSON.stringify() the request body. Default value: false.
    */
@@ -491,7 +648,6 @@ export interface ParameterValue {
  */
 export interface RequestOptionsBase {
   /**
-   * @property {object} [customHeaders] User defined custom request headers that
    * will be applied before the request is sent.
    */
   customHeaders?: { [key: string]: string };
@@ -518,9 +674,20 @@ export interface RequestOptionsBase {
   onDownloadProgress?: (progress: TransferProgressEvent) => void;
 
   /**
+   * Whether or not the HttpOperationResponse should be deserialized. If this is undefined, then the
+   * HttpOperationResponse should be deserialized.
+   */
+  shouldDeserialize?: boolean | ((response: HttpOperationResponse) => boolean);
+
+  /**
    * Options used to create a span when tracing is enabled.
    */
   spanOptions?: SpanOptions;
 
   [key: string]: any;
+
+  /**
+   * Options to override XML parsing/building behavior.
+   */
+  serializerOptions?: SerializerOptions;
 }

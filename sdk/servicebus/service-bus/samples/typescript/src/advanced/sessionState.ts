@@ -15,20 +15,20 @@
 
   Setup: To run this sample, you would need session enabled Queue/Subscription.
 
-  See https://docs.microsoft.com/en-us/azure/service-bus-messaging/message-sessions#message-session-state
+  See https://docs.microsoft.com/azure/service-bus-messaging/message-sessions#message-session-state
   to learn about session state.
 */
 
-import { ServiceBusClient, ReceiveMode } from "@azure/service-bus";
+import { ServiceBusClient, ServiceBusMessage } from "@azure/service-bus";
 
 // Load the .env file if it exists
 import * as dotenv from "dotenv";
 dotenv.config();
 
 // Define connection string and related Service Bus entity names here
-const connectionString = process.env.SERVICE_BUS_CONNECTION_STRING || "<connection string>";
-const queueName = process.env.QUEUE_NAME || "<queue name>";
-const sbClient = ServiceBusClient.createFromConnectionString(connectionString);
+const connectionString = process.env.SERVICEBUS_CONNECTION_STRING || "<connection string>";
+const userEventsQueueName = process.env.QUEUE_NAME_WITH_SESSIONS || "<queue name>";
+const sbClient = new ServiceBusClient(connectionString);
 
 export async function main() {
   try {
@@ -79,14 +79,10 @@ async function runScenario() {
 }
 
 async function getSessionState(sessionId: string) {
-  // If receiving from a Subscription, use `createSubscriptionClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(userEventsQueueName);
+  // If receiving from a subscription you can use the acceptSession(topic, subscription, sessionId) overload
+  const sessionReceiver = await sbClient.acceptSession(userEventsQueueName, sessionId);
 
-  const sessionReceiver = queueClient.createReceiver(ReceiveMode.peekLock, {
-    sessionId: sessionId
-  });
-
-  const sessionState = await sessionReceiver.getState();
+  const sessionState = await sessionReceiver.getSessionState();
   if (sessionState) {
     // Get list of items
     console.log(`\nItems in cart for ${sessionId}: ${sessionState}\n`);
@@ -95,64 +91,60 @@ async function getSessionState(sessionId: string) {
   }
 
   await sessionReceiver.close();
-  await queueClient.close();
 }
 
 async function sendMessagesForSession(shoppingEvents: any[], sessionId: string) {
-  // If sending to a Topic, use `createTopicClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(userEventsQueueName);
-  const sender = queueClient.createSender();
+  // createSender() can also be used to create a sender for a topic.
+  const sender = sbClient.createSender(userEventsQueueName);
 
   for (let index = 0; index < shoppingEvents.length; index++) {
-    const message = {
+    const message: ServiceBusMessage = {
       sessionId: sessionId,
       body: shoppingEvents[index],
-      label: "Shopping Step"
+      subject: "Shopping Step"
     };
-    await sender.send(message);
+    await sender.sendMessages(message);
   }
-  await queueClient.close();
+  await sender.close();
 }
 
 async function processMessageFromSession(sessionId: string) {
-  // If receiving from a Subscription, use `createSubscriptionClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(userEventsQueueName);
+  // If receiving from a subscription you can use the acceptSession(topic, subscription, sessionId) overload
+  const sessionReceiver = await sbClient.acceptSession(userEventsQueueName, sessionId);
 
-  const sessionReceiver = queueClient.createReceiver(ReceiveMode.peekLock, {
-    sessionId: sessionId
+  const messages = await sessionReceiver.receiveMessages(1, {
+    maxWaitTimeInMs: 10000
   });
-
-  const messages = await sessionReceiver.receiveMessages(1, 10);
 
   // Custom logic for processing the messages
   if (messages.length > 0) {
     // Update sessionState
     if (messages[0].body.event_name === "Checkout") {
       // Clear cart if customer exits, else retain items.
-      await sessionReceiver.setState(JSON.stringify([]));
+      await sessionReceiver.setSessionState(JSON.stringify([]));
     } else if (messages[0].body.event_name === "Add Item") {
       // Update cart if customer adds items and store it in session state.
-      const currentSessionState = await sessionReceiver.getState();
+      const currentSessionState = await sessionReceiver.getSessionState();
       let newSessionState: string[] = [];
       if (currentSessionState) {
         newSessionState = JSON.parse(currentSessionState);
       }
       newSessionState.push(messages[0].body.event_details);
-      await sessionReceiver.setState(JSON.stringify(newSessionState));
+      await sessionReceiver.setSessionState(JSON.stringify(newSessionState));
     }
 
     console.log(
       `Received message: Customer '${sessionReceiver.sessionId}': '${messages[0].body.event_name} ${messages[0].body.event_details}'`
     );
-    await messages[0].complete();
+    await sessionReceiver.completeMessage(messages[0]);
   } else {
     console.log(`No events were received for Customer: ${sessionId}\n`);
   }
 
   await sessionReceiver.close();
-  await queueClient.close();
 }
 
 main().catch((err) => {
   console.log("Error occurred: ", err);
+  process.exit(1);
 });

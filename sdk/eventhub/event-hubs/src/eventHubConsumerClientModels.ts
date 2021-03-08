@@ -1,30 +1,32 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { CloseReason } from "./models/public";
 import { ReceivedEventData } from "./eventData";
 import { LastEnqueuedEventProperties } from "./eventHubReceiver";
 import { EventPosition } from "./eventPosition";
-import { TracingOptions } from "./util/operationOptions";
+import { OperationTracingOptions } from "@azure/core-tracing";
 import { MessagingError } from "@azure/core-amqp";
 
 /**
  * @internal
- * @ignore
  */
 export interface BasicPartitionProperties {
   /**
-   * @property The fully qualified Event Hubs namespace. This is likely to be similar to
+   * The fully qualified Event Hubs namespace. This is likely to be similar to
    * <yournamespace>.servicebus.windows.net
    */
   fullyQualifiedNamespace: string;
   /**
-   * @property The event hub name.
+   * The event hub name.
    */
   eventHubName: string;
   /**
-   * @property The consumer group name.
+   * The consumer group name.
    */
   consumerGroup: string;
   /**
-   * @property The identifier of the Event Hub partition.
+   * The identifier of the Event Hub partition.
    */
   partitionId: string;
 }
@@ -37,20 +39,20 @@ export interface BasicPartitionProperties {
  */
 export interface PartitionContext {
   /**
-   * @property The fully qualified Event Hubs namespace. This is likely to be similar to
+   * The fully qualified Event Hubs namespace. This is likely to be similar to
    * <yournamespace>.servicebus.windows.net
    */
   readonly fullyQualifiedNamespace: string;
   /**
-   * @property The event hub name.
+   * The event hub name.
    */
   readonly eventHubName: string;
   /**
-   * @property The consumer group name.
+   * The consumer group name.
    */
   readonly consumerGroup: string;
   /**
-   * @property The identifier of the Event Hub partition.
+   * The identifier of the Event Hub partition.
    */
   readonly partitionId: string;
   /**
@@ -66,8 +68,7 @@ export interface PartitionContext {
    * A checkpoint is meant to represent the last successfully processed event by the user from a particular
    * partition of a consumer group in an Event Hub instance.
    *
-   * @param eventData The event that you want to update the checkpoint with.
-   * @return Promise<void>
+   * @param eventData - The event that you want to update the checkpoint with.
    */
   updateCheckpoint(eventData: ReceivedEventData): Promise<void>;
 }
@@ -114,6 +115,12 @@ export interface SubscriptionEventHandlers {
    * The `updateCheckpoint()` method on the context can be used to update checkpoints in the `CheckpointStore`
    * (if one was provided to the client). Use this in frequent intervals to mark events that have been processed
    * so that the client can restart from such checkpoints in the event of a restart or error recovery.
+   *
+   * Note: It is possible for received events to be an empty array.
+   * This can happen if there are no new events to receive
+   * in the `maxWaitTimeInSeconds`, which is defaulted to 60 seconds.
+   * The `maxWaitTimeInSeconds` can be changed by setting
+   * it in the `options` passed to `subscribe()`.
    */
   processEvents: ProcessEventsHandler;
   /**
@@ -155,9 +162,9 @@ export interface SubscriptionEventHandlers {
 
 /**
  * Options to configure the `subscribe` method on the `EventHubConsumerClient`.
- * For example, `{ maxBatchSize: 20, maxWaitTimeInSeconds: 120, startPosition: { sequenceNumber: 123 } }
+ * For example, `{ maxBatchSize: 20, maxWaitTimeInSeconds: 120, startPosition: { sequenceNumber: 123 } }`
  */
-export interface SubscribeOptions extends TracingOptions {
+export interface SubscribeOptions {
   /**
    * The number of events to request per batch
    */
@@ -174,7 +181,6 @@ export interface SubscribeOptions extends TracingOptions {
    */
   startPosition?: EventPosition | { [partitionId: string]: EventPosition };
   /**
-   * @property
    * Indicates whether or not the consumer should request information on the last enqueued event on its
    * associated partition, and track that information as events are received.
 
@@ -188,6 +194,10 @@ export interface SubscribeOptions extends TracingOptions {
    * The owner level to use as this subscription subscribes to partitions.
    */
   ownerLevel?: number;
+  /**
+   * Options for configuring tracing.
+   */
+  tracingOptions?: OperationTracingOptions;
 }
 
 /**
@@ -196,6 +206,10 @@ export interface SubscribeOptions extends TracingOptions {
 export interface Subscription {
   /**
    * Stops the subscription from receiving more messages.
+   *
+   * If a checkpoint store has been configured this will also mark this subscription's
+   * partitions as abandoned, freeing them up to be read by other consumers.
+   *
    * @returns Promise<void>
    * @throws Error if the underlying connection encounters an error while closing.
    */

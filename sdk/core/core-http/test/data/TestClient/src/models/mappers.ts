@@ -1,9 +1,82 @@
-/*
- * Copyright (c) Microsoft Corporation. All rights reserved.
- * Licensed under the MIT License. See License.txt in the project root for
- * license information.
- */
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 const internalMappers: any = {};
+
+internalMappers.SimpleProduct = {
+  type: {
+    name: "Composite",
+    className: "SimpleProduct",
+    modelProperties: {
+      id: {
+        serializedName: "id",
+        constraints: {},
+        required: true,
+        type: {
+          name: "Number"
+        }
+      },
+      name: {
+        serializedName: "name",
+        required: true,
+        type: {
+          name: "String"
+        }
+      },
+      maxProductDisplayName: {
+        serializedName: "details.max_product_display_name",
+        type: {
+          name: "String"
+        }
+      },
+      capacity: {
+        defaultValue: "Large",
+        isConstant: true,
+        serializedName: "details.max_product_capacity",
+        type: {
+          name: "String"
+        }
+      }
+    }
+  }
+};
+
+internalMappers.SimpleProductConstFirst = {
+  type: {
+    name: "Composite",
+    className: "SimpleProduct",
+    modelProperties: {
+      id: {
+        serializedName: "id",
+        constraints: {},
+        required: true,
+        type: {
+          name: "Number"
+        }
+      },
+      name: {
+        serializedName: "name",
+        required: true,
+        type: {
+          name: "String"
+        }
+      },
+      capacity: {
+        defaultValue: "Large",
+        isConstant: true,
+        serializedName: "details.max_product_capacity",
+        type: {
+          name: "String"
+        }
+      },
+      maxProductDisplayName: {
+        serializedName: "details.max_product_display_name",
+        type: {
+          name: "String"
+        }
+      }
+    }
+  }
+};
 
 internalMappers.Cat = {
   required: false,

@@ -1,12 +1,14 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
-import * as dotenv from "dotenv";
 import { getBSU, recorderEnvSetup, bodyToString } from "./utils";
 import { record, Recorder } from "@azure/test-utils-recorder";
 import { ShareClient, ShareDirectoryClient, ShareFileClient } from "../src";
-import { FileSystemAttributes } from "../src/FileSystemAttributes";
+import * as dotenv from "dotenv";
+dotenv.config();
 
-dotenv.config({ path: "../.env" });
-
+// for file
 describe("LeaseClient", () => {
   let shareName: string;
   let shareClient: ShareClient;
@@ -20,17 +22,7 @@ describe("LeaseClient", () => {
 
   let recorder: Recorder;
 
-  let fullFileAttributes = new FileSystemAttributes();
-  fullFileAttributes.readonly = true;
-  fullFileAttributes.hidden = true;
-  fullFileAttributes.system = true;
-  fullFileAttributes.archive = true;
-  fullFileAttributes.temporary = true;
-  fullFileAttributes.offline = true;
-  fullFileAttributes.notContentIndexed = true;
-  fullFileAttributes.noScrubData = true;
-
-  beforeEach(async function () {
+  beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
     const serviceClient = getBSU();
     shareName = recorder.getUniqueName("share");
@@ -46,9 +38,9 @@ describe("LeaseClient", () => {
     await fileClient.create(content.length);
   });
 
-  afterEach(async function () {
+  afterEach(async function() {
     await shareClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   // lease management:
@@ -96,11 +88,12 @@ describe("LeaseClient", () => {
   });
 
   it("invalid duration for acquireLease", async () => {
-    const invalid_duration = 2;
+    // only -1 for infinite is allowed.
+    const invalid_duration = 20;
     const leaseClient = fileClient.getShareLeaseClient();
     try {
       await leaseClient.acquireLease(invalid_duration);
-      assert.fail("acquireLease should fail for an invalid duration: -2");
+      assert.fail(`acquireLease should fail for an invalid duration: ${invalid_duration}`);
     } catch (err) {
       assert.equal(err.statusCode, 400);
     }
@@ -141,7 +134,9 @@ describe("LeaseClient", () => {
     let result = await fileClient.getProperties();
     assert.equal(result.leaseState, "leased");
 
-    await leaseClient.breakLease();
+    const res = await leaseClient.breakLease();
+    assert.equal(res.leaseTimeInSeconds, undefined);
+
     result = await fileClient.getProperties();
     assert.equal(result.leaseState, "broken");
 

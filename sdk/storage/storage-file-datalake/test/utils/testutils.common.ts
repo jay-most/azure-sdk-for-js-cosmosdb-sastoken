@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { AccessToken, GetTokenOptions, TokenCredential } from "@azure/core-http";
 import { env, isPlaybackMode, RecorderEnvironmentSetup } from "@azure/test-utils-recorder";
 
@@ -13,14 +16,20 @@ export const recorderEnvSetup: RecorderEnvironmentSetup = {
   replaceableVariables: {
     // Used in record and playback modes
     // 1. The key-value pairs will be used as the environment variables in playback mode
-    // 2. If the env variales are present in the recordings as plain strings, they will be replaced with the provided values in record mode
+    // 2. If the env variables are present in the recordings as plain strings, they will be replaced with the provided values in record mode
     DFS_ACCOUNT_NAME: `${mockAccountName}`,
     DFS_ACCOUNT_KEY: `${mockAccountKey}`,
     DFS_ACCOUNT_SAS: `${mockAccountKey}`,
     DFS_STORAGE_CONNECTION_STRING: `DefaultEndpointsProtocol=https;AccountName=${mockAccountName};AccountKey=${mockAccountKey};EndpointSuffix=core.windows.net`,
     // Comment following line to skip user delegation key/SAS related cases in record and play
     // which depends on this environment variable
-    DFS_ACCOUNT_TOKEN: `${mockAccountKey}`
+    DFS_ACCOUNT_TOKEN: `${mockAccountKey}`,
+    DFS_SOFT_DELETE_ACCOUNT_NAME: `${mockAccountName}`,
+    DFS_SOFT_DELETE_ACCOUNT_KEY: `${mockAccountKey}`,
+    DFS_SOFT_DELETE_ACCOUNT_SAS: `${mockAccountKey}`,
+    AZURE_CLIENT_ID: `${mockAccountKey}`,
+    AZURE_TENANT_ID: `${mockAccountKey}`,
+    AZURE_CLIENT_SECRET: `${mockAccountKey}`
   },
   customizationsOnRecordings: [
     // Used in record mode
@@ -64,7 +73,7 @@ export class SimpleTokenCredential implements TokenCredential {
 
   /**
    * Creates an instance of TokenCredential.
-   * @param {string} token
+   * @param token -
    */
   constructor(token: string, expiresOn?: Date) {
     this.token = token;
@@ -74,9 +83,9 @@ export class SimpleTokenCredential implements TokenCredential {
   /**
    * Retrieves the token stored in this RawTokenCredential.
    *
-   * @param _scopes Ignored since token is already known.
-   * @param _options Ignored since token is already known.
-   * @returns {AccessToken} The access token details.
+   * @param _scopes - Ignored since token is already known.
+   * @param _options - Ignored since token is already known.
+   * @returns The access token details.
    */
   async getToken(
     _scopes: string | string[],
@@ -90,7 +99,7 @@ export class SimpleTokenCredential implements TokenCredential {
 }
 
 export function isBrowser(): boolean {
-  return typeof window !== "undefined";
+  return typeof self !== "undefined";
 }
 
 export function getUniqueName(prefix: string): string {
@@ -114,15 +123,15 @@ type BlobMetadata = { [propertyName: string]: string };
 /**
  * Validate if m1 is super set of m2.
  *
- * @param m1 BlobMetadata
- * @param m2 BlobMetadata
+ * @param m1 - BlobMetadata
+ * @param m2 - BlobMetadata
  */
 export function isSuperSet(m1?: BlobMetadata, m2?: BlobMetadata): boolean {
   if (!m1 || !m2) {
     throw new RangeError("m1 or m2 is invalid");
   }
 
-  for (let p in m2) {
+  for (const p in m2) {
     if (m1[p] !== m2[p]) {
       return false;
     }

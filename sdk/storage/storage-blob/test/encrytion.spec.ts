@@ -1,21 +1,16 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import * as dotenv from "dotenv";
-import {
-  getBSU,
-  recorderEnvSetup,
-} from "./utils";
-import { record } from "@azure/test-utils-recorder";
-import {
-  BlobServiceClient,
-  BlobClient,
-  BlockBlobClient,
-  ContainerClient
-} from "../src";
+import { getBSU, recorderEnvSetup } from "./utils";
+import { record, isPlaybackMode, Recorder } from "@azure/test-utils-recorder";
+import { BlobServiceClient, BlobClient, BlockBlobClient, ContainerClient } from "../src";
 import { Test_CPK_INFO } from "./utils/constants";
 import { isNode } from "@azure/core-http";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
-describe("Encryption Scope", function () {
+describe("Encryption Scope", function() {
   let blobServiceClient: BlobServiceClient;
   let containerName: string;
   let containerClient: ContainerClient;
@@ -29,24 +24,23 @@ describe("Encryption Scope", function () {
   const encryptionScopeEnvVar2 = "ENCRYPTION_SCOPE_2";
   let encryptionScopeName1: string | undefined;
   let encryptionScopeName2: string | undefined;
-  if (isNode) {
-    encryptionScopeName1 = process.env[encryptionScopeEnvVar1];
-    encryptionScopeName2 = process.env[encryptionScopeEnvVar2];
-  } else {
-    encryptionScopeName1 = (window as any).__env__[encryptionScopeEnvVar1];
-    encryptionScopeName2 = (window as any).__env__[encryptionScopeEnvVar2];
-  }
+  let recorder: Recorder;
 
-  let recorder: any;
+  beforeEach(async function() {
+    recorder = record(this, recorderEnvSetup);
 
-  before(function () {
-    if (!encryptionScopeName1 || !encryptionScopeName2) {
+    if (isNode) {
+      encryptionScopeName1 = process.env[encryptionScopeEnvVar1];
+      encryptionScopeName2 = process.env[encryptionScopeEnvVar2];
+    } else {
+      encryptionScopeName1 = (self as any).__env__[encryptionScopeEnvVar1];
+      encryptionScopeName2 = (self as any).__env__[encryptionScopeEnvVar2];
+    }
+
+    if ((!encryptionScopeName1 || !encryptionScopeName2) && !isPlaybackMode()) {
       this.skip();
     }
-  });
 
-  beforeEach(async function () {
-    recorder = record(this, recorderEnvSetup);
     blobServiceClient = getBSU();
     containerName = recorder.getUniqueName("container");
     containerClient = blobServiceClient.getContainerClient(containerName);
@@ -55,16 +49,18 @@ describe("Encryption Scope", function () {
     blockBlobClient = blobClient.getBlockBlobClient();
   });
 
-  afterEach(async function () {
-    await containerClient.delete();
-    recorder.stop();
+  afterEach(async function() {
+    if (containerClient) {
+      await containerClient.delete();
+    }
+    await recorder.stop();
   });
 
   it("create container", async () => {
     await containerClient.create();
     let containerChecked = false;
     for await (const container of blobServiceClient.listContainers({
-      includeMetadata: true,
+      includeMetadata: true
     })) {
       if (container.name === containerName) {
         assert.strictEqual(container.properties.defaultEncryptionScope, accountEncryptionKey);
@@ -81,11 +77,16 @@ describe("Encryption Scope", function () {
   });
 
   it("create container preventEncryptionScopeOverride", async () => {
-    await containerClient.create({ containerEncryptionScope: { defaultEncryptionScope: encryptionScopeName1, preventEncryptionScopeOverride: true } });
+    await containerClient.create({
+      containerEncryptionScope: {
+        defaultEncryptionScope: encryptionScopeName1,
+        preventEncryptionScopeOverride: true
+      }
+    });
 
     let containerChecked = false;
     for await (const container of blobServiceClient.listContainers({
-      includeMetadata: true,
+      includeMetadata: true
     })) {
       if (container.name === containerName) {
         assert.strictEqual(container.properties.defaultEncryptionScope, encryptionScopeName1);
@@ -149,6 +150,6 @@ describe("Encryption Scope", function () {
       operationFailed = true;
       assert.strictEqual(err.details.errorCode, "BlobCustomerSpecifiedEncryptionMismatch");
     }
-    assert.ok(operationFailed, "Create snapshot with unmatching encryption scope should fail.")
+    assert.ok(operationFailed, "Create snapshot with unmatching encryption scope should fail.");
   });
-})
+});

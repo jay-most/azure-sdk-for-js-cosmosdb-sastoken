@@ -1,16 +1,29 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 import { AbortSignalLike } from "@azure/abort-controller";
-import { HttpHeaders, isNode, URLBuilder } from "@azure/core-http";
-import { HeaderConstants, URLConstants, DevelopmentConnectionString } from "./constants";
+import { HttpHeaders, isNode, URLBuilder, TokenCredential } from "@azure/core-http";
+
+import {
+  BlobQueryArrowConfiguration,
+  BlobQueryCsvTextConfiguration,
+  BlobQueryJsonTextConfiguration
+} from "../Clients";
+import { QuerySerialization, BlobTags } from "../generated/src/models";
+import { DevelopmentConnectionString, HeaderConstants, URLConstants } from "./constants";
+import {
+  Tags,
+  ObjectReplicationPolicy,
+  ObjectReplicationRule,
+  ObjectReplicationStatus
+} from "../models";
 
 /**
  * Reserved URL characters must be properly escaped for Storage services like Blob or File.
  *
  * ## URL encode and escape strategy for JS SDKs
  *
- * When customers pass a URL string into XxxClient classes constrcutor, the URL string may already be URL encoded or not.
+ * When customers pass a URL string into XxxClient classes constructor, the URL string may already be URL encoded or not.
  * But before sending to Azure Storage server, the URL must be encoded. However, it's hard for a SDK to guess whether the URL
  * string has been encoded or not. We have 2 potential strategies, and chose strategy two for the XxxClient constructors.
  *
@@ -40,7 +53,7 @@ import { HeaderConstants, URLConstants, DevelopmentConnectionString } from "./co
  *
  * This strategy gives us flexibility to create with any special characters. But "%" will be treated as a special characters, if the URL string
  * is not encoded, there shouldn't a "%" in the URL string, otherwise the URL is not a valid URL.
- * If customer needs to create a blob with "%" in it's blob name, use "%25" insead of "%". Just like above 3rd sample.
+ * If customer needs to create a blob with "%" in it's blob name, use "%25" instead of "%". Just like above 3rd sample.
  * And following URL strings are invalid:
  * - "http://account.blob.core.windows.net/con/b%"
  * - "http://account.blob.core.windows.net/con/b%2"
@@ -55,9 +68,7 @@ import { HeaderConstants, URLConstants, DevelopmentConnectionString } from "./co
  * @see https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata
  * @see https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-shares--directories--files--and-metadata
  *
- * @export
- * @param {string} url
- * @returns {string}
+ * @param url -
  */
 export function escapeURLPath(url: string): string {
   const urlParsed = URLBuilder.parse(url);
@@ -118,9 +129,8 @@ export function getValueInConnString(
 /**
  * Extracts the parts of an Azure Storage account connection string.
  *
- * @export
- * @param {string} connectionString Connection string.
- * @returns {ConnectionString}  String key value pairs of the storage account's url and credentials.
+ * @param connectionString - Connection string.
+ * @returns String key value pairs of the storage account's url and credentials.
  */
 export function extractConnectionStringParts(connectionString: string): ConnectionString {
   let proxyUri = "";
@@ -187,14 +197,12 @@ export function extractConnectionStringParts(connectionString: string): Connecti
   } else {
     // SAS connection string
 
-    let accountSas = getValueInConnString(connectionString, "SharedAccessSignature");
-    let accountName = getAccountNameFromUrl(blobEndpoint);
+    const accountSas = getValueInConnString(connectionString, "SharedAccessSignature");
+    const accountName = getAccountNameFromUrl(blobEndpoint);
     if (!blobEndpoint) {
       throw new Error("Invalid BlobEndpoint in the provided SAS Connection String");
     } else if (!accountSas) {
       throw new Error("Invalid SharedAccessSignature in the provided SAS Connection String");
-    } else if (!accountName) {
-      throw new Error("Invalid AccountName in the provided SAS Connection String");
     }
 
     return { kind: "SASConnString", url: blobEndpoint, accountName, accountSas };
@@ -202,10 +210,9 @@ export function extractConnectionStringParts(connectionString: string): Connecti
 }
 
 /**
- * Internal escape method implmented Strategy Two mentioned in escapeURL() description.
+ * Internal escape method implemented Strategy Two mentioned in escapeURL() description.
  *
- * @param {string} text
- * @returns {string}
+ * @param text -
  */
 function escape(text: string): string {
   return encodeURIComponent(text)
@@ -219,10 +226,9 @@ function escape(text: string): string {
  * Append a string to URL path. Will remove duplicated "/" in front of the string
  * when URL path ends with a "/".
  *
- * @export
- * @param {string} url Source URL string
- * @param {string} name String to be appended to URL
- * @returns {string} An updated URL string
+ * @param url - Source URL string
+ * @param name - String to be appended to URL
+ * @returns An updated URL string
  */
 export function appendToURLPath(url: string, name: string): string {
   const urlParsed = URLBuilder.parse(url);
@@ -238,11 +244,10 @@ export function appendToURLPath(url: string, name: string): string {
  * Set URL parameter name and value. If name exists in URL parameters, old value
  * will be replaced by name key. If not provide value, the parameter will be deleted.
  *
- * @export
- * @param {string} url Source URL string
- * @param {string} name Parameter name
- * @param {string} [value] Parameter value
- * @returns {string} An updated URL string
+ * @param url - Source URL string
+ * @param name - Parameter name
+ * @param value - Parameter value
+ * @returns An updated URL string
  */
 export function setURLParameter(url: string, name: string, value?: string): string {
   const urlParsed = URLBuilder.parse(url);
@@ -253,10 +258,8 @@ export function setURLParameter(url: string, name: string, value?: string): stri
 /**
  * Get URL parameter by name.
  *
- * @export
- * @param {string} url
- * @param {string} name
- * @returns {(string | string[] | undefined)}
+ * @param url -
+ * @param name -
  */
 export function getURLParameter(url: string, name: string): string | string[] | undefined {
   const urlParsed = URLBuilder.parse(url);
@@ -266,9 +269,8 @@ export function getURLParameter(url: string, name: string): string | string[] | 
 /**
  * Set URL host.
  *
- * @export
- * @param {string} url Source URL string
- * @param {string} host New host string
+ * @param url - Source URL string
+ * @param host - New host string
  * @returns An updated URL string
  */
 export function setURLHost(url: string, host: string): string {
@@ -280,9 +282,7 @@ export function setURLHost(url: string, host: string): string {
 /**
  * Get URL path from an URL string.
  *
- * @export
- * @param {string} url Source URL string
- * @returns {(string | undefined)}
+ * @param url - Source URL string
  */
 export function getURLPath(url: string): string | undefined {
   const urlParsed = URLBuilder.parse(url);
@@ -292,9 +292,7 @@ export function getURLPath(url: string): string | undefined {
 /**
  * Get URL scheme from an URL string.
  *
- * @export
- * @param {string} url Source URL string
- * @returns {(string | undefined)}
+ * @param url - Source URL string
  */
 export function getURLScheme(url: string): string | undefined {
   const urlParsed = URLBuilder.parse(url);
@@ -304,9 +302,7 @@ export function getURLScheme(url: string): string | undefined {
 /**
  * Get URL path and query from an URL string.
  *
- * @export
- * @param {string} url Source URL string
- * @returns {(string | undefined)}
+ * @param url - Source URL string
  */
 export function getURLPathAndQuery(url: string): string | undefined {
   const urlParsed = URLBuilder.parse(url);
@@ -327,9 +323,7 @@ export function getURLPathAndQuery(url: string): string | undefined {
 /**
  * Get URL query key value pairs from an URL string.
  *
- * @export
- * @param {string} url
- * @returns {{[key: string]: string}}
+ * @param url -
  */
 export function getURLQueries(url: string): { [key: string]: string } {
   let queryString = URLBuilder.parse(url).getQuery();
@@ -361,13 +355,33 @@ export function getURLQueries(url: string): { [key: string]: string } {
 }
 
 /**
+ * Append a string to URL query.
+ *
+ * @param url - Source URL string.
+ * @param queryParts - String to be appended to the URL query.
+ * @returns An updated URL string.
+ */
+export function appendToURLQuery(url: string, queryParts: string): string {
+  const urlParsed = URLBuilder.parse(url);
+
+  let query = urlParsed.getQuery();
+  if (query) {
+    query += "&" + queryParts;
+  } else {
+    query = queryParts;
+  }
+
+  urlParsed.setQuery(query);
+  return urlParsed.toString();
+}
+
+/**
  * Rounds a date off to seconds.
  *
- * @export
- * @param {Date} date
- * @param {boolean} [withMilliseconds=true] If true, YYYY-MM-DDThh:mm:ss.fffffffZ will be returned;
+ * @param date -
+ * @param withMilliseconds - If true, YYYY-MM-DDThh:mm:ss.fffffffZ will be returned;
  *                                          If false, YYYY-MM-DDThh:mm:ssZ will be returned.
- * @returns {string} Date string in ISO8061 format, with or without 7 milliseconds component
+ * @returns Date string in ISO8061 format, with or without 7 milliseconds component
  */
 export function truncatedISO8061Date(date: Date, withMilliseconds: boolean = true): string {
   // Date.toISOString() will return like "2018-10-29T06:34:36.139Z"
@@ -381,9 +395,7 @@ export function truncatedISO8061Date(date: Date, withMilliseconds: boolean = tru
 /**
  * Base64 encode.
  *
- * @export
- * @param {string} content
- * @returns {string}
+ * @param content -
  */
 export function base64encode(content: string): string {
   return !isNode ? btoa(content) : Buffer.from(content).toString("base64");
@@ -392,9 +404,7 @@ export function base64encode(content: string): string {
 /**
  * Base64 decode.
  *
- * @export
- * @param {string} encodedString
- * @returns {string}
+ * @param encodedString -
  */
 export function base64decode(encodedString: string): string {
   return !isNode ? atob(encodedString) : Buffer.from(encodedString, "base64").toString();
@@ -403,9 +413,7 @@ export function base64decode(encodedString: string): string {
 /**
  * Generate a 64 bytes base64 block ID string.
  *
- * @export
- * @param {number} blockIndex
- * @returns {string}
+ * @param blockIndex -
  */
 export function generateBlockID(blockIDPrefix: string, blockIndex: number): string {
   // To generate a 64 bytes base64 string, source string should be 48
@@ -428,13 +436,12 @@ export function generateBlockID(blockIDPrefix: string, blockIndex: number): stri
 /**
  * Delay specified time interval.
  *
- * @export
- * @param {number} timeInMs
- * @param {AbortSignalLike} [aborter]
- * @param {Error} [abortError]
+ * @param timeInMs -
+ * @param aborter -
+ * @param abortError -
  */
 export async function delay(timeInMs: number, aborter?: AbortSignalLike, abortError?: Error) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     let timeout: any;
 
     const abortHandler = () => {
@@ -461,17 +468,17 @@ export async function delay(timeInMs: number, aborter?: AbortSignalLike, abortEr
 /**
  * String.prototype.padStart()
  *
- * @export
- * @param {string} currentString
- * @param {number} targetLength
- * @param {string} [padString=" "]
- * @returns {string}
+ * @param currentString -
+ * @param targetLength -
+ * @param padString -
  */
 export function padStart(
   currentString: string,
   targetLength: number,
   padString: string = " "
 ): string {
+  // TS doesn't know this code needs to run downlevel sometimes.
+  // @ts-expect-error
   if (String.prototype.padStart) {
     return currentString.padStart(targetLength, padString);
   }
@@ -514,10 +521,8 @@ export function sanitizeHeaders(originalHeader: HttpHeaders): HttpHeaders {
 /**
  * If two strings are equal when compared case insensitive.
  *
- * @export
- * @param {string} str1
- * @param {string} str2
- * @returns {boolean}
+ * @param str1 -
+ * @param str2 -
  */
 export function iEqual(str1: string, str2: string): boolean {
   return str1.toLocaleLowerCase() === str2.toLocaleLowerCase();
@@ -525,8 +530,8 @@ export function iEqual(str1: string, str2: string): boolean {
 
 /**
  * Extracts account name from the url
- * @param {string} url url to extract the account name from
- * @returns {string} with the account name
+ * @param url - url to extract the account name from
+ * @returns with the account name
  */
 export function getAccountNameFromUrl(url: string): string {
   const parsedUrl: URLBuilder = URLBuilder.parse(url);
@@ -535,18 +540,199 @@ export function getAccountNameFromUrl(url: string): string {
     if (parsedUrl.getHost()!.split(".")[1] === "blob") {
       // `${defaultEndpointsProtocol}://${accountName}.blob.${endpointSuffix}`;
       accountName = parsedUrl.getHost()!.split(".")[0];
-    } else {
+    } else if (isIpEndpointStyle(parsedUrl)) {
       // IPv4/IPv6 address hosts... Example - http://192.0.0.10:10001/devstoreaccount1/
       // Single word domain without a [dot] in the endpoint... Example - http://localhost:10001/devstoreaccount1/
       // .getPath() -> /devstoreaccount1/
       accountName = parsedUrl.getPath()!.split("/")[1];
-    }
-
-    if (!accountName) {
-      throw new Error("Provided accountName is invalid.");
+    } else {
+      // Custom domain case: "https://customdomain.com/containername/blob".
+      accountName = "";
     }
     return accountName;
   } catch (error) {
     throw new Error("Unable to extract accountName with provided information.");
   }
+}
+
+export function isIpEndpointStyle(parsedUrl: URLBuilder): boolean {
+  if (parsedUrl.getHost() == undefined) {
+    return false;
+  }
+
+  const host =
+    parsedUrl.getHost()! + (parsedUrl.getPort() == undefined ? "" : ":" + parsedUrl.getPort());
+
+  // Case 1: Ipv6, use a broad regex to find out candidates whose host contains two ':'.
+  // Case 2: localhost(:port), use broad regex to match port part.
+  // Case 3: Ipv4, use broad regex which just check if host contains Ipv4.
+  // For valid host please refer to https://man7.org/linux/man-pages/man7/hostname.7.html.
+  return /^.*:.*:.*$|^localhost(:[0-9]+)?$|^(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])){3}(:[0-9]+)?$/.test(
+    host
+  );
+}
+
+/**
+ * Convert Tags to encoded string.
+ *
+ * @param tags -
+ */
+export function toBlobTagsString(tags?: Tags): string | undefined {
+  if (tags === undefined) {
+    return undefined;
+  }
+
+  const tagPairs = [];
+  for (const key in tags) {
+    if (tags.hasOwnProperty(key)) {
+      const value = tags[key];
+      tagPairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    }
+  }
+
+  return tagPairs.join("&");
+}
+
+/**
+ * Convert Tags type to BlobTags.
+ *
+ * @param tags -
+ */
+export function toBlobTags(tags?: Tags): BlobTags | undefined {
+  if (tags === undefined) {
+    return undefined;
+  }
+
+  const res: BlobTags = {
+    blobTagSet: []
+  };
+
+  for (const key in tags) {
+    if (tags.hasOwnProperty(key)) {
+      const value = tags[key];
+      res.blobTagSet.push({
+        key,
+        value
+      });
+    }
+  }
+  return res;
+}
+
+/**
+ * Covert BlobTags to Tags type.
+ *
+ * @param tags -
+ */
+export function toTags(tags?: BlobTags): Tags | undefined {
+  if (tags === undefined) {
+    return undefined;
+  }
+
+  const res: Tags = {};
+  for (const blobTag of tags.blobTagSet) {
+    res[blobTag.key] = blobTag.value;
+  }
+  return res;
+}
+
+/**
+ * Convert BlobQueryTextConfiguration to QuerySerialization type.
+ *
+ * @param textConfiguration -
+ */
+export function toQuerySerialization(
+  textConfiguration?:
+    | BlobQueryJsonTextConfiguration
+    | BlobQueryCsvTextConfiguration
+    | BlobQueryArrowConfiguration
+): QuerySerialization | undefined {
+  if (textConfiguration === undefined) {
+    return undefined;
+  }
+
+  switch (textConfiguration.kind) {
+    case "csv":
+      return {
+        format: {
+          type: "delimited",
+          delimitedTextConfiguration: {
+            columnSeparator: textConfiguration.columnSeparator || ",",
+            fieldQuote: textConfiguration.fieldQuote || "",
+            recordSeparator: textConfiguration.recordSeparator,
+            escapeChar: textConfiguration.escapeCharacter || "",
+            headersPresent: textConfiguration.hasHeaders || false
+          }
+        }
+      };
+    case "json":
+      return {
+        format: {
+          type: "json",
+          jsonTextConfiguration: {
+            recordSeparator: textConfiguration.recordSeparator
+          }
+        }
+      };
+    case "arrow":
+      return {
+        format: {
+          type: "arrow",
+          arrowConfiguration: {
+            schema: textConfiguration.schema
+          }
+        }
+      };
+
+    default:
+      throw Error("Invalid BlobQueryTextConfiguration.");
+  }
+}
+
+export function parseObjectReplicationRecord(
+  objectReplicationRecord?: Record<string, string>
+): ObjectReplicationPolicy[] | undefined {
+  if (!objectReplicationRecord) {
+    return undefined;
+  }
+
+  if ("policy-id" in objectReplicationRecord) {
+    // If the dictionary contains a key with policy id, we are not required to do any parsing since
+    // the policy id should already be stored in the ObjectReplicationDestinationPolicyId.
+    return undefined;
+  }
+
+  const orProperties: ObjectReplicationPolicy[] = [];
+  for (const key in objectReplicationRecord) {
+    const ids = key.split("_");
+    const policyPrefix = "or-";
+    if (ids[0].startsWith(policyPrefix)) {
+      ids[0] = ids[0].substring(policyPrefix.length);
+    }
+    const rule: ObjectReplicationRule = {
+      ruleId: ids[1],
+      replicationStatus: objectReplicationRecord[key] as ObjectReplicationStatus
+    };
+    const policyIndex = orProperties.findIndex((policy) => policy.policyId === ids[0]);
+    if (policyIndex > -1) {
+      orProperties[policyIndex].rules.push(rule);
+    } else {
+      orProperties.push({
+        policyId: ids[0],
+        rules: [rule]
+      });
+    }
+  }
+  return orProperties;
+}
+
+/**
+ * Attach a TokenCredential to an object.
+ *
+ * @param thing -
+ * @param credential -
+ */
+export function attachCredential<T>(thing: T, credential: TokenCredential): T {
+  (thing as any).credential = credential;
+  return thing;
 }

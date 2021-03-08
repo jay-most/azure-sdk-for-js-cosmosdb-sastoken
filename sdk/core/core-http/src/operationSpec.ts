@@ -1,5 +1,5 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import {
   OperationParameter,
@@ -44,6 +44,19 @@ export interface OperationSpec {
   readonly contentType?: string;
 
   /**
+   * The media type of the request body.
+   * This value can be used to aide in serialization if it is provided.
+   */
+  readonly mediaType?:
+    | "json"
+    | "xml"
+    | "form"
+    | "binary"
+    | "multipart"
+    | "text"
+    | "unknown"
+    | string;
+  /**
    * The parameter that will be used to construct the HTTP request's body.
    */
   readonly requestBody?: OperationParameter;
@@ -82,16 +95,19 @@ export interface OperationSpec {
   readonly responses: { [responseCode: string]: OperationResponse };
 }
 
-export function isStreamOperation(operationSpec: OperationSpec): boolean {
-  let result = false;
+/**
+ * Gets the list of status codes for streaming responses.
+ * @internal
+ */
+export function getStreamResponseStatusCodes(operationSpec: OperationSpec): Set<number> {
+  const result = new Set<number>();
   for (const statusCode in operationSpec.responses) {
-    const operationResponse: OperationResponse = operationSpec.responses[statusCode];
+    const operationResponse = operationSpec.responses[statusCode];
     if (
       operationResponse.bodyMapper &&
       operationResponse.bodyMapper.type.name === MapperType.Stream
     ) {
-      result = true;
-      break;
+      result.add(Number(statusCode));
     }
   }
   return result;

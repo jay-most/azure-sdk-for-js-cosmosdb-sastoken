@@ -9,19 +9,17 @@
   to the Dead Letter Queue
 */
 
-import { ServiceBusMessage, ServiceBusClient, ReceiveMode, QueueClient } from "@azure/service-bus";
+import { ServiceBusMessage, ServiceBusClient } from "@azure/service-bus";
 
 // Load the .env file if it exists
 import * as dotenv from "dotenv";
 dotenv.config();
 
 // Define connection string and related Service Bus entity names here
-const connectionString = process.env.SERVICE_BUS_CONNECTION_STRING || "<connection string>";
+const connectionString = process.env.SERVICEBUS_CONNECTION_STRING || "<connection string>";
 const queueName = process.env.QUEUE_NAME || "<queue name>";
 
-// If deadlettered messages are from Subscription, use `TopicClient.getDeadLetterTopicPath` instead
-const deadLetterQueueName = QueueClient.getDeadLetterQueuePath(queueName);
-const sbClient: ServiceBusClient = ServiceBusClient.createFromConnectionString(connectionString);
+const sbClient: ServiceBusClient = new ServiceBusClient(connectionString);
 
 export async function main() {
   try {
@@ -32,8 +30,8 @@ export async function main() {
 }
 
 async function processDeadletterMessageQueue() {
-  const queueClient = sbClient.createQueueClient(deadLetterQueueName);
-  const receiver = queueClient.createReceiver(ReceiveMode.peekLock);
+  // If connecting to a subscription's dead letter queue you can use the createReceiver(topicName, subscriptionName) overload
+  const receiver = sbClient.createReceiver(queueName, { subQueueType: "deadLetter" });
 
   const messages = await receiver.receiveMessages(1);
 
@@ -44,29 +42,29 @@ async function processDeadletterMessageQueue() {
     await fixAndResendMessage(messages[0]);
 
     // Mark message as complete/processed.
-    await messages[0].complete();
+    await receiver.completeMessage(messages[0]);
   } else {
     console.log(">>>> Error: No messages were received from the DLQ.");
   }
 
-  await queueClient.close();
+  await receiver.close();
 }
 
 // Send repaired message back to the current queue / topic
 async function fixAndResendMessage(oldMessage: ServiceBusMessage) {
-  // If sending to a Topic, use `createTopicClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(queueName);
-  const sender = queueClient.createSender();
+  // createSender() can also be used to create a sender for a topic.
+  const sender = sbClient.createSender(queueName);
 
   // Inspect given message and make any changes if necessary
-  const repairedMessage = oldMessage.clone();
+  const repairedMessage = { ...oldMessage };
 
   console.log(">>>>> Cloning the message from DLQ and resending it - ", oldMessage.body);
 
-  await sender.send(repairedMessage);
-  await queueClient.close();
+  await sender.sendMessages(repairedMessage);
+  await sender.close();
 }
 
 main().catch((err) => {
   console.log("Error occurred: ", err);
+  process.exit(1);
 });

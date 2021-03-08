@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { getBSU, recorderEnvSetup } from "../utils";
 import { ShareClient } from "../../src";
 import { Recorder, record } from "@azure/test-utils-recorder";
@@ -14,21 +17,21 @@ describe("StorageSharedKeyCredentialPolicy Node.js only", () => {
     shareName = recorder.getUniqueName("1share-with-dash");
     shareClient = serviceClient.getShareClient(shareName);
     await shareClient.create();
-    recorder.stop();
+    await recorder.stop();
   });
 
   after(async function() {
     recorder = record(this, recorderEnvSetup);
     await shareClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   beforeEach(function() {
     recorder = record(this, recorderEnvSetup);
   });
 
-  afterEach(function() {
-    recorder.stop();
+  afterEach(async function() {
+    await recorder.stop();
   });
 
   it("StorageSharedKeyCredentialPolicy should work with special share and file names with spaces", async () => {

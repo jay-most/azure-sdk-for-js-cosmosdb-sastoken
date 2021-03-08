@@ -1,5 +1,5 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import {
   BaseRequestPolicy,
@@ -9,26 +9,75 @@ import {
 } from "./requestPolicy";
 import { HttpOperationResponse } from "../httpOperationResponse";
 import { ProxySettings } from "../serviceClient";
-import { WebResource } from "../webResource";
+import { WebResourceLike } from "../webResource";
 import { Constants } from "../util/constants";
 import { URLBuilder } from "../url";
+import { getEnvironmentValue } from "../util/utils";
+
+/**
+ * @internal
+ */
+export const noProxyList: string[] = loadNoProxy();
+const byPassedList: Map<string, boolean> = new Map();
 
 function loadEnvironmentProxyValue(): string | undefined {
   if (!process) {
     return undefined;
   }
 
-  if (process.env[Constants.HTTPS_PROXY]) {
-    return process.env[Constants.HTTPS_PROXY];
-  } else if (process.env[Constants.HTTPS_PROXY.toLowerCase()]) {
-    return process.env[Constants.HTTPS_PROXY.toLowerCase()];
-  } else if (process.env[Constants.HTTP_PROXY]) {
-    return process.env[Constants.HTTP_PROXY];
-  } else if (process.env[Constants.HTTP_PROXY.toLowerCase()]) {
-    return process.env[Constants.HTTP_PROXY.toLowerCase()];
+  const httpsProxy = getEnvironmentValue(Constants.HTTPS_PROXY);
+  const allProxy = getEnvironmentValue(Constants.ALL_PROXY);
+  const httpProxy = getEnvironmentValue(Constants.HTTP_PROXY);
+
+  return httpsProxy || allProxy || httpProxy;
+}
+
+// Check whether the host of a given `uri` is in the noProxyList.
+// If there's a match, any request sent to the same host won't have the proxy settings set.
+// This implementation is a port of https://github.com/Azure/azure-sdk-for-net/blob/8cca811371159e527159c7eb65602477898683e2/sdk/core/Azure.Core/src/Pipeline/Internal/HttpEnvironmentProxy.cs#L210
+function isBypassed(uri: string): boolean | undefined {
+  if (noProxyList.length === 0) {
+    return false;
+  }
+  const host = URLBuilder.parse(uri).getHost()!;
+  if (byPassedList.has(host)) {
+    return byPassedList.get(host);
+  }
+  let isBypassedFlag = false;
+  for (const pattern of noProxyList) {
+    if (pattern[0] === ".") {
+      // This should match either domain it self or any subdomain or host
+      // .foo.com will match foo.com it self or *.foo.com
+      if (host.endsWith(pattern)) {
+        isBypassedFlag = true;
+      } else {
+        if (host.length === pattern.length - 1 && host === pattern.slice(1)) {
+          isBypassedFlag = true;
+        }
+      }
+    } else {
+      if (host === pattern) {
+        isBypassedFlag = true;
+      }
+    }
+  }
+  byPassedList.set(host, isBypassedFlag);
+  return isBypassedFlag;
+}
+
+/**
+ * @internal
+ */
+export function loadNoProxy(): string[] {
+  const noProxy = getEnvironmentValue(Constants.NO_PROXY);
+  if (noProxy) {
+    return noProxy
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length);
   }
 
-  return undefined;
+  return [];
 }
 
 export function getDefaultProxySettings(proxyUrl?: string): ProxySettings | undefined {
@@ -61,25 +110,27 @@ export function proxyPolicy(proxySettings?: ProxySettings): RequestPolicyFactory
   };
 }
 
-function extractAuthFromUrl(url: string) : { username?: string, password? : string, urlWithoutAuth: string } {
+function extractAuthFromUrl(
+  url: string
+): { username?: string; password?: string; urlWithoutAuth: string } {
   const atIndex = url.indexOf("@");
   if (atIndex === -1) {
-    return { urlWithoutAuth: url};
+    return { urlWithoutAuth: url };
   }
 
-  const schemeIndex = url.indexOf("://")
-  let authStart =  schemeIndex !== -1 ? schemeIndex + 3  : 0;
+  const schemeIndex = url.indexOf("://");
+  const authStart = schemeIndex !== -1 ? schemeIndex + 3 : 0;
   const auth = url.substring(authStart, atIndex);
   const colonIndex = auth.indexOf(":");
   const hasPassword = colonIndex !== -1;
-  const username = hasPassword ? auth.substring(0, colonIndex) : auth
+  const username = hasPassword ? auth.substring(0, colonIndex) : auth;
   const password = hasPassword ? auth.substring(colonIndex + 1) : undefined;
   const urlWithoutAuth = url.substring(0, authStart) + url.substring(atIndex + 1);
   return {
     username,
     password,
     urlWithoutAuth
-  }
+  };
 }
 
 export class ProxyPolicy extends BaseRequestPolicy {
@@ -94,8 +145,8 @@ export class ProxyPolicy extends BaseRequestPolicy {
     this.proxySettings = proxySettings;
   }
 
-  public sendRequest(request: WebResource): Promise<HttpOperationResponse> {
-    if (!request.proxySettings) {
+  public sendRequest(request: WebResourceLike): Promise<HttpOperationResponse> {
+    if (!request.proxySettings && !isBypassed(request.url)) {
       request.proxySettings = this.proxySettings;
     }
     return this._nextPolicy.sendRequest(request);

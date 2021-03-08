@@ -1,7 +1,10 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 
 import { getBSU, getConnectionStringFromEnvironment, recorderEnvSetup } from "../utils";
-import { PublicAccessType } from "../../src/generated/src/models/index";
+import { PublicAccessType } from "../../src";
 import {
   ContainerClient,
   newPipeline,
@@ -11,15 +14,15 @@ import {
 } from "../../src";
 import { TokenCredential } from "@azure/core-http";
 import { assertClientUsesTokenCredential } from "../utils/assert";
-import { record } from "@azure/test-utils-recorder";
+import { record, Recorder } from "@azure/test-utils-recorder";
 
 describe("ContainerClient Node.js only", () => {
   let containerName: string;
   let containerClient: ContainerClient;
-  let recorder: any;
+  let recorder: Recorder;
 
   let blobServiceClient: BlobServiceClient;
-  beforeEach(async function () {
+  beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
     blobServiceClient = getBSU();
     containerName = recorder.getUniqueName("container");
@@ -27,9 +30,9 @@ describe("ContainerClient Node.js only", () => {
     await containerClient.create();
   });
 
-  afterEach(async function () {
+  afterEach(async function() {
     await containerClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("getAccessPolicy", async () => {

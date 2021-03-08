@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import { HttpHeaders } from "../httpHeaders";
 import { HttpOperationResponse } from "../httpOperationResponse";
 import { Constants } from "../util/constants";
-import { WebResource } from "../webResource";
+import { WebResourceLike } from "../webResource";
 import { getDefaultUserAgentKey, getPlatformSpecificData } from "./msRestUserAgentPolicy";
 import {
   BaseRequestPolicy,
@@ -59,9 +59,11 @@ export function getDefaultUserAgentValue(): string {
 
 export function userAgentPolicy(userAgentData?: TelemetryInfo): RequestPolicyFactory {
   const key: string =
-    !userAgentData || userAgentData.key == undefined ? getDefaultUserAgentKey() : userAgentData.key;
+    !userAgentData || userAgentData.key === undefined || userAgentData.key === null
+      ? getDefaultUserAgentKey()
+      : userAgentData.key;
   const value: string =
-    !userAgentData || userAgentData.value == undefined
+    !userAgentData || userAgentData.value === undefined || userAgentData.value === null
       ? getDefaultUserAgentValue()
       : userAgentData.value;
 
@@ -82,12 +84,12 @@ export class UserAgentPolicy extends BaseRequestPolicy {
     super(_nextPolicy, _options);
   }
 
-  sendRequest(request: WebResource): Promise<HttpOperationResponse> {
+  sendRequest(request: WebResourceLike): Promise<HttpOperationResponse> {
     this.addUserAgentHeader(request);
     return this._nextPolicy.sendRequest(request);
   }
 
-  addUserAgentHeader(request: WebResource): void {
+  addUserAgentHeader(request: WebResourceLike): void {
     if (!request.headers) {
       request.headers = new HttpHeaders();
     }

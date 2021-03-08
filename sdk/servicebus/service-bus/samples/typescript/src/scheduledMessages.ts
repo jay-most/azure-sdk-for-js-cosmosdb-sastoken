@@ -2,20 +2,19 @@
   Copyright (c) Microsoft Corporation. All rights reserved.
   Licensed under the MIT Licence.
 
-  This sample demonstrates how the scheduleMessage() function can be used to schedule messages to
+  This sample demonstrates how the scheduleMessages() function can be used to schedule messages to
   appear on a Service Bus Queue/Subscription at a later time.
 
-  See https://docs.microsoft.com/en-us/azure/service-bus-messaging/message-sequencing#scheduled-messages
+  See https://docs.microsoft.com/azure/service-bus-messaging/message-sequencing#scheduled-messages
   to learn about scheduling messages.
 */
 
 import {
   delay,
+  ProcessErrorArgs,
   ServiceBusClient,
-  ReceiveMode,
-  SendableMessageInfo,
-  OnMessage,
-  OnError
+  ServiceBusMessage,
+  ServiceBusReceivedMessage
 } from "@azure/service-bus";
 
 // Load the .env file if it exists
@@ -23,7 +22,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 // Define connection string and related Service Bus entity names here
-const connectionString = process.env.SERVICE_BUS_CONNECTION_STRING || "<connection string>";
+const connectionString = process.env.SERVICEBUS_CONNECTION_STRING || "<connection string>";
 const queueName = process.env.QUEUE_NAME || "<queue name>";
 
 const listOfScientists = [
@@ -40,7 +39,7 @@ const listOfScientists = [
 ];
 
 export async function main() {
-  const sbClient = ServiceBusClient.createFromConnectionString(connectionString);
+  const sbClient = new ServiceBusClient(connectionString);
   try {
     await sendScheduledMessages(sbClient);
 
@@ -52,14 +51,15 @@ export async function main() {
 
 // Scheduling messages to be sent after 10 seconds from now
 async function sendScheduledMessages(sbClient: ServiceBusClient) {
-  // If sending to a Topic, use `createTopicClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(queueName);
-  const sender = queueClient.createSender();
+  // createSender() handles sending to a queue or a topic
+  const sender = sbClient.createSender(queueName);
 
-  const messages: SendableMessageInfo[] = listOfScientists.map((scientist) => ({
-    body: `${scientist.firstName} ${scientist.lastName}`,
-    label: "Scientist"
-  }));
+  const messages: ServiceBusMessage[] = listOfScientists.map(
+    (scientist): ServiceBusMessage => ({
+      body: `${scientist.firstName} ${scientist.lastName}`,
+      subject: "Scientist"
+    })
+  );
 
   const timeNowUtc = new Date(Date.now());
   const scheduledEnqueueTimeUtc = new Date(Date.now() + 10000);
@@ -68,44 +68,52 @@ async function sendScheduledMessages(sbClient: ServiceBusClient) {
     `Messages will appear in Service Bus after 10 seconds at: ${scheduledEnqueueTimeUtc}`
   );
 
-  await sender.scheduleMessages(scheduledEnqueueTimeUtc, messages);
+  await sender.scheduleMessages(messages, scheduledEnqueueTimeUtc);
 }
 
 async function receiveMessages(sbClient: ServiceBusClient) {
-  // If receiving from a Subscription, use `createSubscriptionClient` instead of `createQueueClient`
-  const queueClient = sbClient.createQueueClient(queueName);
+  // If receiving from a subscription you can use the createReceiver(topicName, subscriptionName) overload
+  // instead.
+  let queueReceiver = sbClient.createReceiver(queueName);
 
   let numOfMessagesReceived = 0;
-  const onMessageHandler: OnMessage = async (brokeredMessage) => {
+  const processMessage = async (brokeredMessage: ServiceBusReceivedMessage) => {
     numOfMessagesReceived++;
-    console.log(`Received message: ${brokeredMessage.body} - ${brokeredMessage.label}`);
-    await brokeredMessage.complete();
+    console.log(`Received message: ${brokeredMessage.body} - ${brokeredMessage.subject}`);
+    await queueReceiver.completeMessage(brokeredMessage);
   };
-  const onErrorHandler: OnError = (err) => {
-    console.log("Error occurred: ", err);
+  const processError = async (args: ProcessErrorArgs) => {
+    console.log(`Error from error source ${args.errorSource} occurred: `, args.error);
   };
 
   console.log(`\nStarting receiver immediately at ${new Date(Date.now())}`);
 
-  let receiver = queueClient.createReceiver(ReceiveMode.peekLock);
-  receiver.registerMessageHandler(onMessageHandler, onErrorHandler);
+  queueReceiver.subscribe({
+    processMessage,
+    processError
+  });
   await delay(5000);
-  await receiver.close();
+  await queueReceiver.close();
   console.log(`Received ${numOfMessagesReceived} messages.`);
 
   await delay(5000);
-  receiver = queueClient.createReceiver(ReceiveMode.peekLock);
-
   console.log(`\nStarting receiver at ${new Date(Date.now())}`);
 
-  receiver.registerMessageHandler(onMessageHandler, onErrorHandler);
+  queueReceiver = sbClient.createReceiver(queueName);
+
+  queueReceiver.subscribe({
+    processMessage,
+    processError
+  });
+
   await delay(5000);
-  await receiver.close();
+  await queueReceiver.close();
   console.log(`Received ${numOfMessagesReceived} messages.`);
 
-  await queueClient.close();
+  await sbClient.close();
 }
 
 main().catch((err) => {
   console.log("Error occurred: ", err);
+  process.exit(1);
 });

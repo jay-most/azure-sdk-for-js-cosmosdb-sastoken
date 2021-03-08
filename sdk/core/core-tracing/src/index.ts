@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 export { getTracer, setTracer } from "./tracerProxy";
 
@@ -10,6 +10,13 @@ export { OpenCensusSpanWrapper } from "./tracers/opencensus/openCensusSpanWrappe
 export { OpenCensusTracerWrapper } from "./tracers/opencensus/openCensusTracerWrapper";
 export { TestTracer, SpanGraph, SpanGraphNode } from "./tracers/test/testTracer";
 export { TestSpan } from "./tracers/test/testSpan";
+export { createSpanFunction, CreateSpanFunctionArgs } from "./createSpan";
+
+// Shared interfaces
+export { SpanContext, SpanOptions, TraceFlags, Link, LinkContext } from "./interfaces";
+
+// OT interfaces
+export { SpanContext as OTSpanContext, SpanOptions as OTSpanOptions } from "@opentelemetry/api";
 
 // Utilities
 export {
@@ -19,3 +26,5 @@ export {
 
 // OpenCensus Interfaces
 export { Tracer as OpenCensusTracer, Span as OpenCensusSpan } from "@opencensus/web-types";
+
+export { OperationTracingOptions } from "./interfaces";

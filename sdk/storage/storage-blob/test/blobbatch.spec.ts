@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import * as dotenv from "dotenv";
 import {
@@ -5,10 +8,11 @@ import {
   getGenericCredential,
   getTokenCredential,
   SimpleTokenCredential,
-  recorderEnvSetup
+  recorderEnvSetup,
+  getTokenBSU
 } from "./utils";
 import { record, Recorder } from "@azure/test-utils-recorder";
-import { BlobBatch } from "../src/BlobBatch";
+import { BlobBatch } from "../src";
 import {
   ContainerClient,
   BlockBlobClient,
@@ -18,16 +22,17 @@ import {
   StorageSharedKeyCredential
 } from "../src";
 
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("BlobBatch", () => {
   let blobServiceClient: BlobServiceClient;
   let blobBatchClient: BlobBatchClient;
+  let containerScopedBatchClient: BlobBatchClient;
   let credential: StorageSharedKeyCredential;
   let containerName: string;
   let containerClient: ContainerClient;
   const blockBlobCount = 3;
-  let blockBlobClients: BlockBlobClient[] = new Array(blockBlobCount);
+  const blockBlobClients: BlockBlobClient[] = new Array(blockBlobCount);
   const content = "Hello World";
 
   let recorder: Recorder;
@@ -38,24 +43,28 @@ describe("BlobBatch", () => {
     blobServiceClient = getGenericBSU("");
     blobBatchClient = blobServiceClient.getBlobBatchClient();
     credential = getGenericCredential("");
+
     containerName = recorder.getUniqueName("container");
     containerClient = blobServiceClient.getContainerClient(containerName);
     await containerClient.create();
+    containerScopedBatchClient = containerClient.getBlobBatchClient();
 
     for (let i = 0; i < blockBlobCount - 1; i++) {
-      let tmpBlobName = `blob${i}`;
-      let tmpBlockBlobClient = containerClient.getBlockBlobClient(tmpBlobName);
+      const tmpBlobName = `blob${i}`;
+      const tmpBlockBlobClient = containerClient.getBlockBlobClient(tmpBlobName);
       blockBlobClients[i] = tmpBlockBlobClient;
     }
 
-    let specialBlobName = `å ä ö`;
-    let tmpBlockBlobClient = containerClient.getBlockBlobClient(specialBlobName);
+    const specialBlobName = `å ä ö`;
+    const tmpBlockBlobClient = containerClient.getBlockBlobClient(specialBlobName);
     blockBlobClients[blockBlobCount - 1] = tmpBlockBlobClient;
   });
 
-  afterEach(async () => {
-    await containerClient.delete();
-    recorder.stop();
+  afterEach(async function() {
+    if (!this.currentTest?.isPending()) {
+      await containerClient.delete();
+      await recorder.stop();
+    }
   });
 
   it("submitBatch should work for batch delete", async () => {
@@ -69,7 +78,7 @@ describe("BlobBatch", () => {
     }
 
     // Assemble batch delete request.
-    let batchDeleteRequest = new BlobBatch();
+    const batchDeleteRequest = new BlobBatch();
     for (let i = 0; i < blockBlobCount; i++) {
       await batchDeleteRequest.deleteBlob(blockBlobClients[i].url, credential, {});
     }
@@ -150,7 +159,7 @@ describe("BlobBatch", () => {
     await blockBlobClients[0].createSnapshot();
 
     // Assemble batch delete request which delete blob with its snapshot.
-    let batchDeleteRequest = new BlobBatch();
+    const batchDeleteRequest = new BlobBatch();
     await batchDeleteRequest.deleteBlob(blockBlobClients[0].url, credential, {
       deleteSnapshots: "include"
     });
@@ -192,7 +201,7 @@ describe("BlobBatch", () => {
     const snapshotClient = blockBlobClients[1].withSnapshot(createSnapshotResp.snapshot!);
 
     // Assemble batch delete request.
-    let batchDeleteRequest2 = new BlobBatch();
+    const batchDeleteRequest2 = new BlobBatch();
     await batchDeleteRequest2.deleteBlob(snapshotClient.url, credential);
 
     // Ensure blobs ready.
@@ -232,7 +241,7 @@ describe("BlobBatch", () => {
     const snapshotClient2 = blockBlobClients[2].withSnapshot(createSnapshotResp2.snapshot!);
 
     // Assemble batch delete request.
-    let batchDeleteRequest3 = new BlobBatch();
+    const batchDeleteRequest3 = new BlobBatch();
     await batchDeleteRequest3.deleteBlob(snapshotClient2);
 
     // Ensure blobs ready.
@@ -274,7 +283,7 @@ describe("BlobBatch", () => {
     const b1 = await blockBlobClients[1].upload(content, content.length);
 
     // Assemble batch delete request.
-    let batchDeleteRequest = new BlobBatch();
+    const batchDeleteRequest = new BlobBatch();
     await batchDeleteRequest.deleteBlob(blockBlobClients[0], {
       conditions: {
         ifMatch: b0.etag
@@ -316,7 +325,7 @@ describe("BlobBatch", () => {
     }
 
     // Assemble batch set tier request.
-    let batchSetTierRequest = new BlobBatch();
+    const batchSetTierRequest = new BlobBatch();
     for (let i = 0; i < blockBlobCount; i++) {
       await batchSetTierRequest.setBlobAccessTier(blockBlobClients[i].url, credential, "Cool", {});
     }
@@ -335,7 +344,7 @@ describe("BlobBatch", () => {
       assert.equal(resp.subResponses[i]._request.url, blockBlobClients[i].url);
 
       // Check blob tier set properly.
-      let resp2 = await blockBlobClients[i].getProperties();
+      const resp2 = await blockBlobClients[i].getProperties();
       assert.equal(resp2.accessTier, "Cool");
     }
   });
@@ -365,7 +374,7 @@ describe("BlobBatch", () => {
       assert.equal(resp.subResponses[i]._request.url, blockBlobClients[i].url);
 
       // Check blob tier set properly.
-      let resp2 = await blockBlobClients[i].getProperties();
+      const resp2 = await blockBlobClients[i].getProperties();
       assert.equal(resp2.accessTier, "Cool");
     }
   });
@@ -386,7 +395,7 @@ describe("BlobBatch", () => {
     assert.ok(leaseResp.leaseId! != "");
 
     // Assemble batch set tier request.
-    let batchSetTierRequest = new BlobBatch();
+    const batchSetTierRequest = new BlobBatch();
     await batchSetTierRequest.setBlobAccessTier(blockBlobClients[0], "Cool");
     await batchSetTierRequest.setBlobAccessTier(blockBlobClients[1], "Cool", {
       conditions: { leaseId: leaseResp.leaseId! }
@@ -406,7 +415,98 @@ describe("BlobBatch", () => {
       assert.equal(resp.subResponses[i]._request.url, blockBlobClients[i].url);
 
       // Check blob tier set properly.
-      let resp2 = await blockBlobClients[i].getProperties();
+      const resp2 = await blockBlobClients[i].getProperties();
+      assert.equal(resp2.accessTier, "Cool");
+    }
+  });
+
+  it("submitBatch should work for batch set tier with versioning", async () => {
+    recorder.skip(
+      undefined,
+      "UUID is randomly generated within the SDK and used in the HTTP request and cannot be preserved."
+    );
+
+    // Upload blobs.
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      await blockBlobClients[i].upload(content, content.length);
+    }
+
+    // Create versioning.
+    const metadata = { a: "a" };
+    const blockBlobClientsWithVersion: BlockBlobClient[] = [];
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      const resp = await blockBlobClients[i].setMetadata(metadata);
+      blockBlobClientsWithVersion[i] = blockBlobClients[i].withVersion(
+        resp.versionId!
+      ) as BlockBlobClient;
+    }
+
+    // Assemble batch set tier request.
+    const batchSetTierRequest = new BlobBatch();
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      await batchSetTierRequest.setBlobAccessTier(blockBlobClientsWithVersion[i], "Cool");
+    }
+
+    // Submit batch request and verify response.
+    const resp = await blobBatchClient.submitBatch(batchSetTierRequest, {});
+    assert.equal(resp.subResponses.length, blockBlobClients.length);
+    assert.equal(resp.subResponsesSucceededCount, blockBlobClients.length);
+    assert.equal(resp.subResponsesFailedCount, 0);
+
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      assert.equal(resp.subResponses[i].errorCode, undefined);
+      assert.equal(resp.subResponses[i].status, 200);
+      assert.ok(resp.subResponses[i].statusMessage != "");
+      assert.ok(resp.subResponses[i].headers.contains("x-ms-request-id"));
+      assert.equal(resp.subResponses[i]._request.url, blockBlobClientsWithVersion[i].url);
+
+      // Check blob tier set properly.
+      const resp2 = await blockBlobClientsWithVersion[i].getProperties();
+      assert.equal(resp2.accessTier, "Cool");
+    }
+  });
+
+  it("submitBatch should work for batch set tier with snapshot", async () => {
+    recorder.skip(
+      undefined,
+      "UUID is randomly generated within the SDK and used in the HTTP request and cannot be preserved."
+    );
+
+    // Upload blobs.
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      await blockBlobClients[i].upload(content, content.length);
+    }
+
+    // Create snapshot.
+    const blockBlobClientsWithSnapshot: BlockBlobClient[] = [];
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      const resp = await blockBlobClients[i].createSnapshot();
+      blockBlobClientsWithSnapshot[i] = blockBlobClients[i].withSnapshot(
+        resp.snapshot!
+      ) as BlockBlobClient;
+    }
+
+    // Assemble batch set tier request.
+    const batchSetTierRequest = new BlobBatch();
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      await batchSetTierRequest.setBlobAccessTier(blockBlobClientsWithSnapshot[i], "Cool");
+    }
+
+    // Submit batch request and verify response.
+    const resp = await blobBatchClient.submitBatch(batchSetTierRequest, {});
+    assert.equal(resp.subResponses.length, blockBlobClients.length);
+    assert.equal(resp.subResponsesSucceededCount, blockBlobClients.length);
+    assert.equal(resp.subResponsesFailedCount, 0);
+
+    for (let i = 0; i < blockBlobClients.length; i++) {
+      assert.equal(resp.subResponses[i].errorCode, undefined);
+      assert.equal(resp.subResponses[i].status, 200);
+      assert.ok(resp.subResponses[i].statusMessage != "");
+      assert.ok(resp.subResponses[i].headers.contains("x-ms-request-id"));
+      assert.equal(resp.subResponses[i]._request.url, blockBlobClientsWithSnapshot[i].url);
+
+      // Check blob tier set properly.
+      const resp2 = await blockBlobClientsWithSnapshot[i].getProperties();
       assert.equal(resp2.accessTier, "Cool");
     }
   });
@@ -434,7 +534,7 @@ describe("BlobBatch", () => {
     await blockBlobClients[1].upload(content, content.length);
 
     // Assemble batch set tier request.
-    let batchSetTierRequest = new BlobBatch();
+    const batchSetTierRequest = new BlobBatch();
     await batchSetTierRequest.setBlobAccessTier(blockBlobClients[0].url, credential, "Cool");
     // When it's using token credential be sure it's not with SAS (browser testing case)
     let blockBlobClient1WithoutSAS = blockBlobClients[1].url;
@@ -464,7 +564,7 @@ describe("BlobBatch", () => {
       assert.ok(resp.subResponses[i].headers.contains("x-ms-request-id"));
 
       // Check blob tier set properly.
-      let resp2 = await blockBlobClients[i].getProperties();
+      const resp2 = await blockBlobClients[i].getProperties();
       assert.equal(resp2.accessTier, "Cool");
     }
 
@@ -473,10 +573,10 @@ describe("BlobBatch", () => {
   });
 
   it("submitBatch should report error when sub requests exceed 256", async () => {
-    let batchSetTierRequest = new BlobBatch();
+    const batchSetTierRequest = new BlobBatch();
 
     for (let i = 0; i < 256; i++) {
-      let tmpBlobClient = containerClient.getBlobClient(`blob${i}`);
+      const tmpBlobClient = containerClient.getBlobClient(`blob${i}`);
 
       await batchSetTierRequest.setBlobAccessTier(tmpBlobClient.url, credential, "Cool");
     }
@@ -484,7 +584,7 @@ describe("BlobBatch", () => {
     let exceptionCaught = false;
 
     try {
-      let tmpBlobClient = containerClient.getBlobClient(`blobexceed`);
+      const tmpBlobClient = containerClient.getBlobClient(`blobexceed`);
       await batchSetTierRequest.setBlobAccessTier(tmpBlobClient.url, credential, "Cool");
     } catch (err) {
       if (
@@ -499,7 +599,7 @@ describe("BlobBatch", () => {
   });
 
   it("submitBatch should report error when sub request with invalid url or invalid credential", async () => {
-    let batchSetTierRequest = new BlobBatch();
+    const batchSetTierRequest = new BlobBatch();
     let exceptionCaught = false;
 
     try {
@@ -513,7 +613,7 @@ describe("BlobBatch", () => {
   });
 
   it("submitBatch should report error with 0 sub request", async () => {
-    let batchDeleteRequest = new BlobBatch();
+    const batchDeleteRequest = new BlobBatch();
 
     let exceptionCaught = false;
     try {
@@ -538,7 +638,7 @@ describe("BlobBatch", () => {
     await blockBlobClients[0].upload(content, content.length);
 
     // Assemble batch set tier request.
-    let batchSetTierRequest = new BlobBatch();
+    const batchSetTierRequest = new BlobBatch();
     await batchSetTierRequest.setBlobAccessTier(blockBlobClients[0].url, credential, "Cool");
 
     const invalidCredServiceClient = new BlobServiceClient(
@@ -561,8 +661,8 @@ describe("BlobBatch", () => {
     assert.ok(exceptionCaught);
   });
 
-  it("BlobBatch should report error when mixing differnt request types in one batch", async () => {
-    let batchRequest = new BlobBatch();
+  it("BlobBatch should report error when mixing different request types in one batch", async () => {
+    const batchRequest = new BlobBatch();
 
     let exceptionCaught = false;
     try {
@@ -578,5 +678,154 @@ describe("BlobBatch", () => {
       }
     }
     assert.ok(exceptionCaught);
+  });
+
+  it("Container scoped: submitBatch should work for batch delete", async () => {
+    recorder.skip(
+      undefined,
+      "UUID is randomly generated within the SDK and used in the HTTP request and cannot be preserved."
+    );
+    // Upload blobs.
+    for (let i = 0; i < blockBlobCount; i++) {
+      await blockBlobClients[i].upload(content, content.length);
+    }
+
+    // Assemble batch delete request.
+    const batchDeleteRequest = new BlobBatch();
+    for (let i = 0; i < blockBlobCount; i++) {
+      await batchDeleteRequest.deleteBlob(blockBlobClients[i].url, credential, {});
+    }
+
+    // Submit batch request and verify response.
+    const resp = await containerScopedBatchClient.submitBatch(batchDeleteRequest, {});
+    assert.equal(resp.subResponses.length, blockBlobCount);
+    assert.equal(resp.subResponsesSucceededCount, blockBlobCount);
+    assert.equal(resp.subResponsesFailedCount, 0);
+
+    for (let i = 0; i < blockBlobCount; i++) {
+      assert.equal(resp.subResponses[i].errorCode, undefined);
+      assert.equal(resp.subResponses[i].status, 202);
+      assert.ok(resp.subResponses[i].statusMessage != "");
+      assert.ok(resp.subResponses[i].headers.contains("x-ms-request-id"));
+      assert.equal(resp.subResponses[i]._request.url, blockBlobClients[i].url);
+    }
+
+    // Verify blobs deleted.
+    const resp2 = (
+      await containerClient
+        .listBlobsFlat({
+          includeSnapshots: true
+        })
+        .byPage({ maxPageSize: 1 })
+        .next()
+    ).value;
+    assert.equal(resp2.segment.blobItems.length, 0);
+  });
+});
+
+describe("BlobBatch Token auth", () => {
+  let blobServiceClient: BlobServiceClient;
+  let blobBatchClient: BlobBatchClient;
+  let containerClient: ContainerClient;
+  const blockBlobCount = 3;
+  const blockBlobClients: BlockBlobClient[] = new Array(blockBlobCount);
+  const content = "Hello World";
+
+  let recorder: Recorder;
+
+  beforeEach(async function() {
+    recorder = record(this, recorderEnvSetup);
+
+    // Try to get serviceURL object with TokenCredential when ACCOUNT_TOKEN environment variable is set
+    try {
+      blobServiceClient = getTokenBSU();
+    } catch (err) {
+      console.log(err);
+      this.skip();
+    }
+
+    blobBatchClient = blobServiceClient.getBlobBatchClient();
+
+    const containerName = recorder.getUniqueName("container");
+    containerClient = blobServiceClient.getContainerClient(containerName);
+    await containerClient.create();
+
+    for (let i = 0; i < blockBlobCount - 1; i++) {
+      const tmpBlobName = `blob${i}`;
+      const tmpBlockBlobClient = containerClient.getBlockBlobClient(tmpBlobName);
+      blockBlobClients[i] = tmpBlockBlobClient;
+    }
+    const specialBlobName = `å ä ö`;
+    const tmpBlockBlobClient = containerClient.getBlockBlobClient(specialBlobName);
+    blockBlobClients[blockBlobCount - 1] = tmpBlockBlobClient;
+  });
+
+  afterEach(async function() {
+    if (!this.currentTest?.isPending()) {
+      await containerClient.delete();
+      await recorder.stop();
+    }
+  });
+
+  it("Should work when passing in BlobClient", async function() {
+    recorder.skip(
+      undefined,
+      "UUID is randomly generated within the SDK and used in the HTTP request and cannot be preserved."
+    );
+    // Upload blobs.
+    for (let i = 0; i < blockBlobCount; i++) {
+      await blockBlobClients[i].upload(content, content.length);
+    }
+
+    // Assemble batch delete request.
+    const batchDeleteRequest = new BlobBatch();
+    for (let i = 0; i < blockBlobCount; i++) {
+      await batchDeleteRequest.deleteBlob(blockBlobClients[i]);
+    }
+
+    // Submit batch request and verify response.
+    const resp = await blobBatchClient.submitBatch(batchDeleteRequest, {});
+    assert.equal(resp.subResponses.length, blockBlobCount);
+    assert.equal(resp.subResponsesSucceededCount, blockBlobCount);
+    assert.equal(resp.subResponsesFailedCount, 0);
+
+    for (let i = 0; i < blockBlobCount; i++) {
+      assert.equal(resp.subResponses[i].errorCode, undefined);
+      assert.equal(resp.subResponses[i].status, 202);
+      assert.ok(resp.subResponses[i].statusMessage != "");
+      assert.ok(resp.subResponses[i].headers.contains("x-ms-request-id"));
+      assert.equal(resp.subResponses[i]._request.url, blockBlobClients[i].url);
+    }
+  });
+
+  it("Should work when passing in url and credential", async function() {
+    recorder.skip(
+      undefined,
+      "UUID is randomly generated within the SDK and used in the HTTP request and cannot be preserved."
+    );
+    // Upload blobs.
+    for (let i = 0; i < blockBlobCount; i++) {
+      await blockBlobClients[i].upload(content, content.length);
+    }
+
+    // Assemble batch delete request.
+    const batchDeleteRequest = new BlobBatch();
+    for (let i = 0; i < blockBlobCount; i++) {
+      await batchDeleteRequest.deleteBlob(blockBlobClients[i].url, blockBlobClients[i].credential);
+    }
+
+    // Submit batch request and verify response.
+    const resp = await blobBatchClient.submitBatch(batchDeleteRequest, {});
+    assert.equal(resp.subResponses.length, blockBlobCount);
+    assert.equal(resp.subResponsesSucceededCount, blockBlobCount);
+    assert.equal(resp.subResponsesFailedCount, 0);
+
+    for (let i = 0; i < blockBlobCount; i++) {
+      assert.equal(resp.subResponses[i].errorCode, undefined);
+      assert.equal(resp.subResponses[i].status, 202);
+      assert.ok(resp.subResponses[i].statusMessage != "");
+      assert.ok(resp.subResponses[i].headers.contains("x-ms-request-id"));
+      assert.equal(resp.subResponses[i]._request.url, blockBlobClients[i].url);
+    }
   });
 });

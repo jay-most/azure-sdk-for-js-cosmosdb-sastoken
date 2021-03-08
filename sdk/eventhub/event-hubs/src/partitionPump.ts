@@ -1,41 +1,38 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
-import { logger, logErrorStackTrace } from "./log";
+import { logErrorStackTrace, logger } from "./log";
 import { CommonEventProcessorOptions } from "./models/private";
 import { CloseReason } from "./models/public";
-import { EventHubClient } from "./impl/eventHubClient";
 import { EventPosition } from "./eventPosition";
 import { PartitionProcessor } from "./partitionProcessor";
-import { EventHubConsumer } from "./receiver";
+import { EventHubReceiver } from "./eventHubReceiver";
 import { AbortController } from "@azure/abort-controller";
 import { MessagingError } from "@azure/core-amqp";
-import { getParentSpan, TracingOptions } from "./util/operationOptions";
-import { getTracer } from "@azure/core-tracing";
-import { Span, SpanKind, Link, CanonicalCode } from "@opentelemetry/types";
+import { OperationOptions } from "./util/operationOptions";
+import { CanonicalCode, Link, Span, SpanKind } from "@opentelemetry/api";
 import { extractSpanContextFromEventData } from "./diagnostics/instrumentEventData";
 import { ReceivedEventData } from "./eventData";
+import { ConnectionContext } from "./connectionContext";
+import { createEventHubSpan } from "./diagnostics/tracing";
+import { EventHubConnectionConfig } from "./eventhubConnectionConfig";
 
 /**
- * @ignore
  * @internal
  */
 export class PartitionPump {
-  private _eventHubClient: EventHubClient;
   private _partitionProcessor: PartitionProcessor;
   private _processorOptions: CommonEventProcessorOptions;
-  private _receiver: EventHubConsumer | undefined;
+  private _receiver: EventHubReceiver | undefined;
   private _isReceiving: boolean = false;
   private _isStopped: boolean = false;
   private _abortController: AbortController;
-
   constructor(
-    eventHubClient: EventHubClient,
+    private _context: ConnectionContext,
     partitionProcessor: PartitionProcessor,
     private readonly _startPosition: EventPosition,
     options: CommonEventProcessorOptions
   ) {
-    this._eventHubClient = eventHubClient;
     this._partitionProcessor = partitionProcessor;
     this._processorOptions = options;
     this._abortController = new AbortController();
@@ -62,20 +59,56 @@ export class PartitionPump {
     );
   }
 
-  private async _receiveEvents(partitionId: string): Promise<void> {
-    this._receiver = this._eventHubClient.createConsumer(
+  /**
+   * Creates a new `EventHubReceiver` and replaces any existing receiver.
+   * @param partitionId - The partition the receiver should read messages from.
+   * @param lastSeenSequenceNumber - The sequence number to begin receiving messages from (exclusive).
+   * If `-1`, then the PartitionPump's startPosition will be used instead.
+   */
+  private _setOrReplaceReceiver(
+    partitionId: string,
+    lastSeenSequenceNumber: number
+  ): EventHubReceiver {
+    // Determine what the new EventPosition should be.
+    // If this PartitionPump has received events, we'll start from the last
+    // seen sequenceNumber (exclusive).
+    // Otherwise, use the `_startPosition`.
+    const currentEventPosition: EventPosition =
+      lastSeenSequenceNumber >= 0
+        ? {
+            sequenceNumber: lastSeenSequenceNumber,
+            isInclusive: false
+          }
+        : this._startPosition;
+
+    // Set or replace the PartitionPump's receiver.
+    this._receiver = new EventHubReceiver(
+      this._context,
       this._partitionProcessor.consumerGroup,
       partitionId,
-      this._startPosition,
+      currentEventPosition,
       {
         ownerLevel: this._processorOptions.ownerLevel,
-        trackLastEnqueuedEventProperties: this._processorOptions.trackLastEnqueuedEventProperties
+        trackLastEnqueuedEventProperties: this._processorOptions.trackLastEnqueuedEventProperties,
+        retryOptions: this._processorOptions.retryOptions
       }
     );
 
+    return this._receiver;
+  }
+
+  private async _receiveEvents(partitionId: string): Promise<void> {
+    let lastSeenSequenceNumber = -1;
+    let receiver = this._setOrReplaceReceiver(partitionId, lastSeenSequenceNumber);
+
     while (this._isReceiving) {
       try {
-        const receivedEvents = await this._receiver.receiveBatch(
+        // Check if the receiver was closed so we can recreate it.
+        if (receiver.isClosed) {
+          receiver = this._setOrReplaceReceiver(partitionId, lastSeenSequenceNumber);
+        }
+
+        const receivedEvents = await receiver.receiveBatch(
           this._processorOptions.maxBatchSize,
           this._processorOptions.maxWaitTimeInSeconds,
           this._abortController.signal
@@ -83,18 +116,23 @@ export class PartitionPump {
 
         if (
           this._processorOptions.trackLastEnqueuedEventProperties &&
-          this._receiver.lastEnqueuedEventProperties
+          receiver.lastEnqueuedEventProperties
         ) {
-          this._partitionProcessor.lastEnqueuedEventProperties = this._receiver.lastEnqueuedEventProperties;
+          this._partitionProcessor.lastEnqueuedEventProperties =
+            receiver.lastEnqueuedEventProperties;
         }
         // avoid calling user's processEvents handler if the pump was stopped while receiving events
         if (!this._isReceiving) {
           return;
         }
 
+        if (receivedEvents.length) {
+          lastSeenSequenceNumber = receivedEvents[receivedEvents.length - 1].sequenceNumber;
+        }
+
         const span = createProcessingSpan(
           receivedEvents,
-          this._eventHubClient,
+          this._context.config,
           this._processorOptions
         );
 
@@ -114,9 +152,9 @@ export class PartitionPump {
         // forward error to user's processError and swallow errors they may throw
         try {
           await this._partitionProcessor.processError(err);
-        } catch (err) {
+        } catch (errorFromUser) {
           // Using verbose over warning because this error is swallowed.
-          logger.verbose("An error was thrown by user's processError method: ", err);
+          logger.verbose("An error was thrown by user's processError method: ", errorFromUser);
         }
 
         // close the partition processor if a non-retryable error was encountered
@@ -129,11 +167,11 @@ export class PartitionPump {
             }
             // this will close the pump and will break us out of the while loop
             return await this.stop(CloseReason.Shutdown);
-          } catch (err) {
+          } catch (errorFromStop) {
             // Using verbose over warning because this error is swallowed.
             logger.verbose(
               `An error occurred while closing the receiver with reason ${CloseReason.Shutdown}: `,
-              err
+              errorFromStop
             );
           }
         }
@@ -148,13 +186,17 @@ export class PartitionPump {
     this._isStopped = true;
     this._isReceiving = false;
     try {
+      // Trigger the cancellation before closing the receiver,
+      // otherwise the receiver will remove the listener on the abortSignal
+      // before it has a chance to be emitted.
+      this._abortController.abort();
+
       if (this._receiver) {
         await this._receiver.close();
       }
-      this._abortController.abort();
       await this._partitionProcessor.close(reason);
     } catch (err) {
-      logger.warning("An error occurred while closing the receiver.", err);
+      logger.warning(`An error occurred while closing the receiver: ${err?.name}: ${err?.message}`);
       logErrorStackTrace(err);
       this._partitionProcessor.processError(err);
       throw err;
@@ -164,12 +206,11 @@ export class PartitionPump {
 
 /**
  * @internal
- * @ignore
  */
 export function createProcessingSpan(
   receivedEvents: ReceivedEventData[],
-  eventHubProperties: { eventHubName: string; endpoint: string },
-  tracingOptions: TracingOptions
+  eventHubProperties: Pick<EventHubConnectionConfig, "entityPath" | "host">,
+  options?: OperationOptions
 ): Span {
   const links: Link[] = [];
 
@@ -181,27 +222,22 @@ export function createProcessingSpan(
     }
 
     links.push({
-      spanContext
+      context: spanContext,
+      attributes: {
+        enqueuedTime: receivedEvent.enqueuedTimeUtc.getTime()
+      }
     });
   }
 
-  const span = getTracer().startSpan("Azure.EventHubs.process", {
+  const { span } = createEventHubSpan("process", options, eventHubProperties, {
     kind: SpanKind.CONSUMER,
-    links,
-    parent: getParentSpan(tracingOptions)
-  });
-
-  span.setAttributes({
-    "az.namespace": "Microsoft.EventHub",
-    "message_bus.destination": eventHubProperties.eventHubName,
-    "peer.address": eventHubProperties.endpoint
+    links
   });
 
   return span;
 }
 
 /**
- * @ignore
  * @internal
  */
 export async function trace(fn: () => Promise<void>, span: Span): Promise<void> {

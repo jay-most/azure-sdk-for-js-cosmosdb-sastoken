@@ -1,12 +1,23 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import { randomBytes } from "crypto";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
-import { extractConnectionStringParts } from "../../src/utils/utils.common";
+import { delay, extractConnectionStringParts } from "../../src/utils/utils.common";
 import { Readable, ReadableOptions, PassThrough } from "stream";
-import { readStreamToLocalFile, streamToBuffer2 } from "../../src/utils/utils.node";
-dotenv.config({ path: "../.env" });
+import {
+  readStreamToLocalFile,
+  streamToBuffer2,
+  streamToBuffer3
+} from "../../src/utils/utils.node";
+import {
+  ReadableStreamGetter,
+  RetriableReadableStream
+} from "../../src/utils/RetriableReadableStream";
+dotenv.config();
 
 describe("Utility Helpers Node.js only", () => {
   const protocol = "https";
@@ -43,7 +54,7 @@ describe("Utility Helpers Node.js only", () => {
     } catch (error) {
       assert.ok(
         error.message ===
-        "Invalid DefaultEndpointsProtocol in the provided Connection String. Expecting 'https' or 'http'"
+          "Invalid DefaultEndpointsProtocol in the provided Connection String. Expecting 'https' or 'http'"
       );
     }
   });
@@ -247,7 +258,10 @@ describe("Utility Helpers Node.js only", () => {
 
       _read() {
         if (this._numBytesSent < this._buffer.length) {
-          const bytesToSend = Math.min(this._bytesPerRead, this._buffer.length - this._numBytesSent);
+          const bytesToSend = Math.min(
+            this._bytesPerRead,
+            this._buffer.length - this._numBytesSent
+          );
           this.push(this._buffer.slice(this._numBytesSent, this._numBytesSent + bytesToSend));
           this._numBytesSent += bytesToSend;
         } else {
@@ -259,44 +273,86 @@ describe("Utility Helpers Node.js only", () => {
     const len = 1024;
     const tests = [
       {
-        title: "should success when streamType == test, buffer.length == stream.length, and bytesPerRead == stream.length",
-        streamType: "test", streamLength: len, bufferLength: len, bytesPerRead: len, expectedSuccess: true
+        title:
+          "should success when streamType == test, buffer.length == stream.length, and bytesPerRead == stream.length",
+        streamType: "test",
+        streamLength: len,
+        bufferLength: len,
+        bytesPerRead: len,
+        expectedSuccess: true
       },
       {
-        title: "should success when streamType == test, buffer.length > stream.length and bytesPerRead == stream.length",
-        streamType: "test", streamLength: len, bufferLength: len + 1, bytesPerRead: len, expectedSuccess: true
+        title:
+          "should success when streamType == test, buffer.length > stream.length and bytesPerRead == stream.length",
+        streamType: "test",
+        streamLength: len,
+        bufferLength: len + 1,
+        bytesPerRead: len,
+        expectedSuccess: true
       },
       {
-        title: "should reject when streamType == test, buffer.length < stream.length and bytesPerRead == stream.length",
-        streamType: "test", streamLength: len, bufferLength: len - 1, bytesPerRead: len, expectedSuccess: false
+        title:
+          "should reject when streamType == test, buffer.length < stream.length and bytesPerRead == stream.length",
+        streamType: "test",
+        streamLength: len,
+        bufferLength: len - 1,
+        bytesPerRead: len,
+        expectedSuccess: false
       },
       {
-        title: "should success when streamType == test, buffer.length == stream.length and bytesPerRead < stream.length",
-        streamType: "test", streamLength: len, bufferLength: len, bytesPerRead: 100, expectedSuccess: true
+        title:
+          "should success when streamType == test, buffer.length == stream.length and bytesPerRead < stream.length",
+        streamType: "test",
+        streamLength: len,
+        bufferLength: len,
+        bytesPerRead: 100,
+        expectedSuccess: true
       },
       {
-        title: "should success when streamType == test, buffer.length > stream.length and bytesPerRead < stream.length",
-        streamType: "test", streamLength: len, bufferLength: len + 1, bytesPerRead: 100, expectedSuccess: true
+        title:
+          "should success when streamType == test, buffer.length > stream.length and bytesPerRead < stream.length",
+        streamType: "test",
+        streamLength: len,
+        bufferLength: len + 1,
+        bytesPerRead: 100,
+        expectedSuccess: true
       },
       {
-        title: "should reject when streamType == test, buffer.length < stream.length and bytesPerRead < stream.length",
-        streamType: "test", streamLength: len, bufferLength: len - 1, bytesPerRead: 100, expectedSuccess: false
+        title:
+          "should reject when streamType == test, buffer.length < stream.length and bytesPerRead < stream.length",
+        streamType: "test",
+        streamLength: len,
+        bufferLength: len - 1,
+        bytesPerRead: 100,
+        expectedSuccess: false
       },
       {
-        title: "should success when streamType == passthrough, buffer.length == stream.length and bytesPerRead < stream.length",
-        streamType: "passthrough", streamLength: len, bufferLength: len, expectedSuccess: true
+        title:
+          "should success when streamType == passthrough, buffer.length == stream.length and bytesPerRead < stream.length",
+        streamType: "passthrough",
+        streamLength: len,
+        bufferLength: len,
+        expectedSuccess: true
       },
       {
-        title: "should success when streamType == passthrough, buffer.length > stream.length and bytesPerRead < stream.length",
-        streamType: "passthrough", streamLength: len, bufferLength: len + 1, expectedSuccess: true
+        title:
+          "should success when streamType == passthrough, buffer.length > stream.length and bytesPerRead < stream.length",
+        streamType: "passthrough",
+        streamLength: len,
+        bufferLength: len + 1,
+        expectedSuccess: true
       },
       {
-        title: "should reject when streamType == passthrough, buffer.length < stream.length and bytesPerRead < stream.length",
-        streamType: "passthrough", streamLength: len, bufferLength: len - 1, expectedSuccess: false
-      },
-    ]
+        title:
+          "should reject when streamType == passthrough, buffer.length < stream.length and bytesPerRead < stream.length",
+        streamType: "passthrough",
+        streamLength: len,
+        bufferLength: len - 1,
+        expectedSuccess: false
+      }
+    ];
 
-    tests.forEach(function (test) {
+    tests.forEach(function(test) {
       it(test.title, async () => {
         const inputBuffer = randomBytes(test.streamLength);
 
@@ -307,13 +363,11 @@ describe("Utility Helpers Node.js only", () => {
         let readStream: Readable;
         if (test.streamType == "test") {
           readStream = new TestReadableStream(inputBuffer, test.bytesPerRead!);
-        }
-        else if (test.streamType == "passthrough") {
+        } else if (test.streamType == "passthrough") {
           const passthrough = new PassThrough();
           passthrough.end(inputBuffer);
           readStream = passthrough;
-        }
-        else {
+        } else {
           throw new Error(`Invalid value for test.streamType: ${test.streamType}`);
         }
 
@@ -323,8 +377,7 @@ describe("Utility Helpers Node.js only", () => {
           await streamToBuffer2(readStream, outputBuffer);
           if (test.expectedSuccess) {
             assert.deepEqual(outputBuffer.slice(0, inputBuffer.length), inputBuffer);
-          }
-          else {
+          } else {
             throw new Error("Test failure");
           }
         } catch (err) {
@@ -336,5 +389,110 @@ describe("Utility Helpers Node.js only", () => {
         }
       });
     });
+  });
+});
+
+describe("RetriableReadableStream", () => {
+  const counterMax = 10;
+  const delayTimeInMs = 10;
+
+  class Counter extends Readable {
+    constructor(
+      private _max: number = counterMax,
+      public index: number = 0,
+      opt: ReadableOptions = {}
+    ) {
+      super(opt);
+    }
+
+    _read() {
+      const i = this.index++;
+      if (i >= this._max) {
+        this.push(null);
+      } else {
+        const str = String(i);
+        const buf = Buffer.from(str, "ascii");
+        this.push(buf);
+      }
+    }
+  }
+
+  const getter: ReadableStreamGetter = (offset) => {
+    return new Promise((resolve) => {
+      resolve(new Counter(undefined, offset));
+    });
+  };
+
+  it("destory should work", async () => {
+    const counter = new Counter();
+    const retriable = new RetriableReadableStream(counter, getter, 0, counterMax);
+
+    const passedInError = new Error("Passed in error.");
+    let errorCaught = false;
+    retriable.on("error", (err) => {
+      assert.deepStrictEqual(err, passedInError);
+      errorCaught = true;
+    });
+
+    retriable.destroy(passedInError);
+    // spare time for events to fire
+    await delay(delayTimeInMs);
+    assert.ok((counter as any).destroyed);
+    assert.ok(errorCaught);
+  });
+
+  it("setEncoding should work", async () => {
+    const counter = new Counter(1);
+    const retriable = new RetriableReadableStream(counter, getter, 0, 1);
+    retriable.on("data", (chunk) => {
+      assert.deepStrictEqual(chunk, Buffer.from("0", "ascii"));
+    });
+
+    const counter2 = new Counter(1);
+    const retriable2 = new RetriableReadableStream(counter2, getter, 0, 1);
+    retriable2.setEncoding("ascii");
+    retriable2.on("data", (chunk) => {
+      assert.deepStrictEqual(chunk, "0");
+    });
+  });
+
+  it("pause and resume should work", async () => {
+    const counter = new Counter(10, undefined, { highWaterMark: 1 });
+    const retriable = new RetriableReadableStream(counter, getter, 0, 10, { highWaterMark: 1 });
+
+    let cur = 0;
+    retriable.on("data", (chunk) => {
+      assert.deepStrictEqual(chunk, Buffer.from(String(cur++), "ascii"));
+      assert.equal(counter.index, cur + 1);
+      retriable.pause();
+    });
+
+    await delay(delayTimeInMs);
+    assert.equal(cur, 1);
+
+    retriable.resume();
+    await delay(delayTimeInMs);
+    assert.equal(cur, 2);
+  });
+
+  it("retry should work on source error", async () => {
+    const counter = new Counter();
+    const retriable = new RetriableReadableStream(counter, getter, 0, counterMax, {
+      maxRetryRequests: 1
+    });
+    counter.destroy(new Error("Manual injected error."));
+
+    const resBuf = await streamToBuffer3(retriable);
+    assert.deepStrictEqual(resBuf.toString(), "0123456789");
+  });
+
+  it("retry should work on source unexpected end", async () => {
+    const counter = new Counter(2);
+    const retriable = new RetriableReadableStream(counter, getter, 0, counterMax, {
+      maxRetryRequests: 1
+    });
+
+    const resBuf = await streamToBuffer3(retriable);
+    assert.deepStrictEqual(resBuf.toString(), "0123456789");
   });
 });

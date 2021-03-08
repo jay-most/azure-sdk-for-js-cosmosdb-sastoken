@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import assert from "assert";
-import { TokenCredentialOptions } from "../src";
-import { _setDelayTestFunction } from "../src/util/delay";
+import * as sinon from "sinon";
+import { ClientCertificateCredentialOptions } from "../src";
 import {
   HttpHeaders,
   HttpOperationResponse,
@@ -11,9 +11,11 @@ import {
   HttpClient,
   RestError
 } from "@azure/core-http";
+import * as coreHttp from "@azure/core-http";
 
 export interface MockAuthResponse {
-  status: number;
+  status?: number;
+  error?: RestError;
   headers?: HttpHeaders;
   parsedBody?: any;
   bodyAsText?: string;
@@ -26,10 +28,10 @@ export interface MockAuthHttpClientOptions {
 
 export class MockAuthHttpClient implements HttpClient {
   private authResponses: MockAuthResponse[] = [];
-  private currentResponse: number = 0;
+  private currentResponseIndex: number = 0;
   private mockTimeout: boolean;
 
-  public tokenCredentialOptions: TokenCredentialOptions;
+  public tokenCredentialOptions: ClientCertificateCredentialOptions;
   public requests: WebResource[] = [];
 
   constructor(options?: MockAuthHttpClientOptions) {
@@ -75,13 +77,22 @@ export class MockAuthHttpClient implements HttpClient {
       throw new Error("The number of requests has exceeded the number of authResponses");
     }
 
+    const authResponse = this.authResponses[this.currentResponseIndex];
+
+    if (authResponse.error) {
+      this.currentResponseIndex++;
+      throw authResponse.error;
+    }
+
     const response = {
       request: httpRequest,
-      headers: this.authResponses[this.currentResponse].headers || new HttpHeaders(),
-      ...this.authResponses[this.currentResponse]
+      headers: authResponse.headers || new HttpHeaders(),
+      status: authResponse.status || 200,
+      parsedBody: authResponse.parsedBody,
+      bodyAsText: authResponse.bodyAsText
     };
 
-    this.currentResponse++;
+    this.currentResponseIndex++;
     return response;
   }
 }
@@ -162,10 +173,6 @@ export async function assertRejects(
   }
 }
 
-export function setDelayInstantlyCompletes(): void {
-  _setDelayTestFunction(() => Promise.resolve());
-}
-
 export interface DelayInfo {
   resolve: () => void;
   reject: (e: Error) => void;
@@ -229,14 +236,25 @@ export class DelayController {
   }
 }
 
+const sandbox = sinon.createSandbox();
+
+export function setDelayInstantlyCompletes(): void {
+  sandbox.replace(coreHttp, "delay", (): any => Promise.resolve());
+}
+
 export function createDelayController(): DelayController {
   const controller = new DelayController();
-  _setDelayTestFunction((t) => {
-    return controller.delayRequested(t);
-  });
+  sandbox.restore();
+  sandbox.replace(
+    coreHttp,
+    "delay",
+    (t: any): Promise<any> => {
+      return controller.delayRequested(t);
+    }
+  );
   return controller;
 }
 
 export function restoreDelayBehavior(): void {
-  _setDelayTestFunction();
+  sandbox.restore();
 }

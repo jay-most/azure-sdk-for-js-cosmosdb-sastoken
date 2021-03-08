@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 import { AbortSignalLike } from "@azure/abort-controller";
 import { HttpHeaders, isNode, URLBuilder } from "@azure/core-http";
@@ -55,9 +55,7 @@ import { HeaderConstants, URLConstants } from "./constants";
  * @see https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata
  * @see https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-shares--directories--files--and-metadata
  *
- * @export
- * @param {string} url
- * @returns {string}
+ * @param url -
  */
 export function escapeURLPath(url: string): string {
   const urlParsed = URLBuilder.parse(url);
@@ -101,9 +99,8 @@ function getValueInConnString(
 /**
  * Extracts the parts of an Azure Storage account connection string.
  *
- * @export
- * @param {string} connectionString Connection string.
- * @returns {ConnectionString} String key value pairs of the storage account's url and credentials.
+ * @param connectionString - Connection string.
+ * @returns String key value pairs of the storage account's url and credentials.
  */
 export function extractConnectionStringParts(connectionString: string): ConnectionString {
   // Matching FileEndpoint in the Account connection string
@@ -160,15 +157,12 @@ export function extractConnectionStringParts(connectionString: string): Connecti
     };
   } else {
     // SAS connection string
-
-    let accountName = getAccountNameFromUrl(fileEndpoint);
-    let accountSas = getValueInConnString(connectionString, "SharedAccessSignature");
+    const accountSas = getValueInConnString(connectionString, "SharedAccessSignature");
+    const accountName = getAccountNameFromUrl(fileEndpoint);
     if (!fileEndpoint) {
       throw new Error("Invalid FileEndpoint in the provided SAS Connection String");
     } else if (!accountSas) {
       throw new Error("Invalid SharedAccessSignature in the provided SAS Connection String");
-    } else if (!accountName) {
-      throw new Error("Invalid AccountName in the provided SAS Connection String");
     }
 
     return { kind: "SASConnString", url: fileEndpoint, accountName, accountSas };
@@ -178,8 +172,7 @@ export function extractConnectionStringParts(connectionString: string): Connecti
 /**
  * Internal escape method implemented Strategy Two mentioned in escapeURL() description.
  *
- * @param {string} text
- * @returns {string}
+ * @param text -
  */
 function escape(text: string): string {
   return encodeURIComponent(text)
@@ -193,10 +186,9 @@ function escape(text: string): string {
  * Append a string to URL path. Will remove duplicated "/" in front of the string
  * when URL path ends with a "/".
  *
- * @export
- * @param {string} url Source URL string
- * @param {string} name String to be appended to URL
- * @returns {string} An updated URL string
+ * @param url - Source URL string
+ * @param name - String to be appended to URL
+ * @returns An updated URL string
  */
 export function appendToURLPath(url: string, name: string): string {
   const urlParsed = URLBuilder.parse(url);
@@ -209,14 +201,34 @@ export function appendToURLPath(url: string, name: string): string {
 }
 
 /**
+ * Append a string to URL query.
+ *
+ * @param url - Source URL string.
+ * @param queryParts - String to be appended to the URL query.
+ * @returns An updated URL string.
+ */
+export function appendToURLQuery(url: string, queryParts: string): string {
+  const urlParsed = URLBuilder.parse(url);
+
+  let query = urlParsed.getQuery();
+  if (query) {
+    query += "&" + queryParts;
+  } else {
+    query = queryParts;
+  }
+
+  urlParsed.setQuery(query);
+  return urlParsed.toString();
+}
+
+/**
  * Set URL parameter name and value. If name exists in URL parameters, old value
  * will be replaced by name key. If not provide value, the parameter will be deleted.
  *
- * @export
- * @param {string} url Source URL string
- * @param {string} name Parameter name
- * @param {string} [value] Parameter value
- * @returns {string} An updated URL string
+ * @param url - Source URL string
+ * @param name - Parameter name
+ * @param value - Parameter value
+ * @returns An updated URL string
  */
 export function setURLParameter(url: string, name: string, value?: string): string {
   const urlParsed = URLBuilder.parse(url);
@@ -227,10 +239,8 @@ export function setURLParameter(url: string, name: string, value?: string): stri
 /**
  * Get URL parameter by name.
  *
- * @export
- * @param {string} url
- * @param {string} name
- * @returns {(string | string[] | undefined)}
+ * @param url -
+ * @param name -
  */
 export function getURLParameter(url: string, name: string): string | string[] | undefined {
   const urlParsed = URLBuilder.parse(url);
@@ -240,9 +250,8 @@ export function getURLParameter(url: string, name: string): string | string[] | 
 /**
  * Set URL host.
  *
- * @export
- * @param {string} url Source URL string
- * @param {string} host New host string
+ * @param url - Source URL string
+ * @param host - New host string
  * @returns An updated URL string
  */
 export function setURLHost(url: string, host: string): string {
@@ -254,9 +263,7 @@ export function setURLHost(url: string, host: string): string {
 /**
  * Get URL path from an URL string.
  *
- * @export
- * @param {string} url Source URL string
- * @returns {(string | undefined)}
+ * @param url - Source URL string
  */
 export function getURLPath(url: string): string | undefined {
   const urlParsed = URLBuilder.parse(url);
@@ -266,9 +273,7 @@ export function getURLPath(url: string): string | undefined {
 /**
  * Get URL query key value pairs from an URL string.
  *
- * @export
- * @param {string} url
- * @returns {{[key: string]: string}}
+ * @param url -
  */
 export function getURLQueries(url: string): { [key: string]: string } {
   let queryString = URLBuilder.parse(url).getQuery();
@@ -300,11 +305,10 @@ export function getURLQueries(url: string): { [key: string]: string } {
 /**
  * Rounds a date off to seconds.
  *
- * @export
- * @param {Date} date
- * @param {boolean} [withMilliseconds=true] If true, YYYY-MM-DDThh:mm:ss.fffffffZ will be returned;
+ * @param date -
+ * @param withMilliseconds - If true, YYYY-MM-DDThh:mm:ss.fffffffZ will be returned;
  *                                          If false, YYYY-MM-DDThh:mm:ssZ will be returned.
- * @returns {string} Date string in ISO8061 format, with or without 7 milliseconds component
+ * @returns Date string in ISO8061 format, with or without 7 milliseconds component
  */
 export function truncatedISO8061Date(date: Date, withMilliseconds: boolean = true): string {
   // Date.toISOString() will return like "2018-10-29T06:34:36.139Z"
@@ -318,9 +322,7 @@ export function truncatedISO8061Date(date: Date, withMilliseconds: boolean = tru
 /**
  * Base64 encode.
  *
- * @export
- * @param {string} content
- * @returns {string}
+ * @param content -
  */
 export function base64encode(content: string): string {
   return !isNode ? btoa(content) : Buffer.from(content).toString("base64");
@@ -329,9 +331,7 @@ export function base64encode(content: string): string {
 /**
  * Base64 decode.
  *
- * @export
- * @param {string} encodedString
- * @returns {string}
+ * @param encodedString -
  */
 export function base64decode(encodedString: string): string {
   return !isNode ? atob(encodedString) : Buffer.from(encodedString, "base64").toString();
@@ -340,13 +340,12 @@ export function base64decode(encodedString: string): string {
 /**
  * Delay specified time interval.
  *
- * @export
- * @param {number} timeInMs
- * @param {AbortSignalLike} [aborter]
- * @param {Error} [abortError]
+ * @param timeInMs -
+ * @param aborter -
+ * @param abortError -
  */
 export async function delay(timeInMs: number, aborter?: AbortSignalLike, abortError?: Error) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     let timeout: any;
 
     const abortHandler = () => {
@@ -373,17 +372,17 @@ export async function delay(timeInMs: number, aborter?: AbortSignalLike, abortEr
 /**
  * String.prototype.padStart()
  *
- * @export
- * @param {string} currentString
- * @param {number} targetLength
- * @param {string} [padString=" "]
- * @returns {string}
+ * @param currentString -
+ * @param targetLength -
+ * @param padString -
  */
 export function padStart(
   currentString: string,
   targetLength: number,
   padString: string = " "
 ): string {
+  // TS doesn't know this code needs to run downlevel sometimes.
+  // @ts-expect-error
   if (String.prototype.padStart) {
     return currentString.padStart(targetLength, padString);
   }
@@ -426,8 +425,8 @@ export function sanitizeHeaders(originalHeader: HttpHeaders): HttpHeaders {
 
 /**
  * Extracts account name from the url
- * @param {string} url url to extract the account name from
- * @returns {string} with the account name
+ * @param url - url to extract the account name from
+ * @returns with the account name
  */
 export function getAccountNameFromUrl(url: string): string {
   const parsedUrl: URLBuilder = URLBuilder.parse(url);
@@ -439,20 +438,36 @@ export function getAccountNameFromUrl(url: string): string {
       url = url.endsWith("/") ? url.slice(0, -1) : url;
 
       accountName = parsedUrl.getHost()!.split(".")[0];
-    } else {
+    } else if (isIpEndpointStyle(parsedUrl)) {
       // IPv4/IPv6 address hosts... Example - http://192.0.0.10:10001/devstoreaccount1/
       // Single word domain without a [dot] in the endpoint... Example - http://localhost:10001/devstoreaccount1/
       // .getPath() -> /devstoreaccount1/
       accountName = parsedUrl.getPath()!.split("/")[1];
-    }
-
-    if (!accountName) {
-      throw new Error("Provided accountName is invalid.");
+    } else {
+      // Custom domain case: "https://customdomain.com/containername/blob".
+      accountName = "";
     }
     return accountName;
   } catch (error) {
     throw new Error("Unable to extract accountName with provided information.");
   }
+}
+
+export function isIpEndpointStyle(parsedUrl: URLBuilder): boolean {
+  if (parsedUrl.getHost() == undefined) {
+    return false;
+  }
+
+  const host =
+    parsedUrl.getHost()! + (parsedUrl.getPort() == undefined ? "" : ":" + parsedUrl.getPort());
+
+  // Case 1: Ipv6, use a broad regex to find out candidates whose host contains two ':'.
+  // Case 2: localhost(:port), use broad regex to match port part.
+  // Case 3: Ipv4, use broad regex which just check if host contains Ipv4.
+  // For valid host please refer to https://man7.org/linux/man-pages/man7/hostname.7.html.
+  return /^.*:.*:.*$|^localhost(:[0-9]+)?$|^(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])){3}(:[0-9]+)?$/.test(
+    host
+  );
 }
 
 export function getShareNameAndPathFromUrl(
@@ -481,13 +496,19 @@ export function getShareNameAndPathFromUrl(
       const pathComponents = parsedUrl.getPath()!.match("/([^/]*)(/(.*))?");
       shareName = pathComponents![1];
       path = pathComponents![3];
-    } else {
+    } else if (isIpEndpointStyle(parsedUrl)) {
       // IPv4/IPv6 address hosts... Example - http://187.24.0.1:1000/devstoreaccount1/mydirectory/file
       // Single word domain without a [dot] in the endpoint... Example - http://localhost:1000/devstoreaccount1/mydirectory/file
       // .getPath() -> /devstoreaccount1/mydirectory/file
       const pathComponents = parsedUrl.getPath()!.match("/([^/]*)/([^/]*)(/(.*))?");
       shareName = pathComponents![2];
       path = pathComponents![4];
+    } else {
+      // "https://customdomain.com/myshare/mydirectory/file";
+      // .getPath() -> /myshare/mydirectory/file
+      const pathComponents = parsedUrl.getPath()!.match("/([^/]*)(/(.*))?");
+      shareName = pathComponents![1];
+      path = pathComponents![3];
     }
 
     // decode the encoded shareName and filePath - to get all the special characters that might be present in it

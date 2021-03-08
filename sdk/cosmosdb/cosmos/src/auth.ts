@@ -1,7 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 import { generateHeaders } from "./utils/headers";
-import { Constants, getResourceIdFromPath, HTTPMethod, ResourceType } from "./common";
+import {
+  Constants,
+  getResourceIdFromPath,
+  HTTPMethod,
+  ResourceType,
+  trimSlashFromLeftAndRight
+} from "./common";
 import { CosmosClientOptions } from "./CosmosClientOptions";
 import { CosmosHeaders } from "./queryExecutionContext";
 
@@ -17,13 +23,7 @@ export interface RequestInfo {
 export type TokenProvider = (requestInfo: RequestInfo) => Promise<string>;
 
 /**
- * @ignore
- * @param clientOptions
- * @param verb
- * @param path
- * @param resourceId
- * @param resourceType
- * @param headers
+ * @hidden
  */
 export async function setAuthorizationHeader(
   clientOptions: CosmosClientOptions,
@@ -62,12 +62,20 @@ export async function setAuthorizationHeader(
     headers[Constants.HttpHeaders.Authorization] = encodeURIComponent(
       await clientOptions.tokenProvider({ verb, path, resourceId, resourceType, headers })
     );
+  } else if (clientOptions.aadCredentials) {
+    if (typeof clientOptions.aadCredentials?.getToken !== "function") {
+      throw new Error("Cannot use AAD Credentials without `getToken`. See @azure/identity docs");
+    }
+    const token = await clientOptions.aadCredentials.getToken(`${clientOptions.endpoint}/.default`);
+    const AUTH_PREFIX = `type=aad&ver=1.0&sig=`;
+    const authorizationToken = `${AUTH_PREFIX}${token.token}`;
+    headers[Constants.HttpHeaders.Authorization] = encodeURIComponent(authorizationToken);
   }
 }
 
 /**
  * The default function for setting header token using the masterKey
- * @ignore
+ * @hidden
  */
 export async function setAuthorizationTokenHeaderUsingMasterKey(
   verb: HTTPMethod,
@@ -75,7 +83,7 @@ export async function setAuthorizationTokenHeaderUsingMasterKey(
   resourceType: ResourceType,
   headers: CosmosHeaders,
   masterKey: string
-) {
+): Promise<void> {
   // TODO This should live in cosmos-sign
   if (resourceType === ResourceType.offer) {
     resourceId = resourceId && resourceId.toLowerCase();
@@ -87,17 +95,14 @@ export async function setAuthorizationTokenHeaderUsingMasterKey(
 }
 
 /**
- * @ignore
- * @param resourceTokens
- * @param path
- * @param resourceId
+ * @hidden
  */
 // TODO: Resource tokens
-function getAuthorizationTokenUsingResourceTokens(
+export function getAuthorizationTokenUsingResourceTokens(
   resourceTokens: { [resourceId: string]: string },
   path: string,
   resourceId: string
-) {
+): string {
   if (resourceTokens && Object.keys(resourceTokens).length > 0) {
     // For database account access(through getDatabaseAccount API), path and resourceId are "",
     // so in this case we return the first token to be used for creating the auth header as the
@@ -106,22 +111,36 @@ function getAuthorizationTokenUsingResourceTokens(
       return resourceTokens[Object.keys(resourceTokens)[0]];
     }
 
+    // If we have exact resource token for the path use it
     if (resourceId && resourceTokens[resourceId]) {
       return resourceTokens[resourceId];
     }
 
     // minimum valid path /dbs
     if (!path || path.length < 4) {
+      // TODO: This should throw an error
       return null;
     }
 
-    // remove '/' from left and right of path
-    path = path[0] === "/" ? path.substring(1) : path;
-    path = path[path.length - 1] === "/" ? path.substring(0, path.length - 1) : path;
-
+    path = trimSlashFromLeftAndRight(path);
     const pathSegments = (path && path.split("/")) || [];
 
-    // if it's an incomplete path like /dbs/db1/colls/, start from the paretn resource
+    // Item path
+    if (pathSegments.length === 6) {
+      // Look for a container token matching the item path
+      const containerPath = pathSegments
+        .slice(0, 4)
+        .map(decodeURIComponent)
+        .join("/");
+      if (resourceTokens[containerPath]) {
+        return resourceTokens[containerPath];
+      }
+    }
+
+    // TODO remove in v4: This is legacy behavior that lets someone use a resource token pointing ONLY at an ID
+    // It was used when _rid was exposed by the SDK, but now that we are using user provided ids it is not needed
+    // However removing it now would be a breaking change
+    // if it's an incomplete path like /dbs/db1/colls/, start from the parent resource
     let index = pathSegments.length % 2 === 0 ? pathSegments.length - 1 : pathSegments.length - 2;
     for (; index > 0; index -= 2) {
       const id = decodeURI(pathSegments[index]);
@@ -130,5 +149,7 @@ function getAuthorizationTokenUsingResourceTokens(
       }
     }
   }
+
+  // TODO: This should throw an error
   return null;
 }

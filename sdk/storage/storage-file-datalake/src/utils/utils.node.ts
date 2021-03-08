@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 import * as fs from "fs";
 import * as util from "util";
@@ -8,13 +8,11 @@ import { isNode } from "@azure/core-http";
 /**
  * Reads a readable stream into buffer. Fill the buffer from offset to end.
  *
- * @export
- * @param {NodeJS.ReadableStream} stream A Node.js Readable stream
- * @param {Buffer} buffer Buffer to be filled, length must >= offset
- * @param {number} offset From which position in the buffer to be filled, inclusive
- * @param {number} end To which position in the buffer to be filled, exclusive
- * @param {string} [encoding] Encoding of the Readable stream
- * @returns {Promise<void>}
+ * @param stream - A Node.js Readable stream
+ * @param buffer - Buffer to be filled, length must greater than or equal to offset
+ * @param offset - From which position in the buffer to be filled, inclusive
+ * @param end - To which position in the buffer to be filled, exclusive
+ * @param encoding - Encoding of the Readable stream
  */
 export async function streamToBuffer(
   stream: NodeJS.ReadableStream,
@@ -66,12 +64,11 @@ export async function streamToBuffer(
 /**
  * Reads a readable stream into buffer entirely.
  *
- * @export
- * @param {NodeJS.ReadableStream} stream A Node.js Readable stream
- * @param {Buffer} buffer Buffer to be filled, length must >= offset
- * @param {string} [encoding] Encoding of the Readable stream
- * @returns {Promise<number>} with the count of bytes read.
- * @throws {RangeError} If buffer size is not big enough.
+ * @param stream - A Node.js Readable stream
+ * @param buffer - Buffer to be filled, length must greater than or equal to offset
+ * @param encoding - Encoding of the Readable stream
+ * @returns with the count of bytes read.
+ * @throws `RangeError` If buffer size is not big enough.
  */
 export async function streamToBuffer2(
   stream: NodeJS.ReadableStream,
@@ -79,7 +76,7 @@ export async function streamToBuffer2(
   encoding?: string
 ): Promise<number> {
   let pos = 0; // Position in stream
-  let bufferSize = buffer.length;
+  const bufferSize = buffer.length;
 
   return new Promise<number>((resolve, reject) => {
     stream.on("readable", () => {
@@ -111,72 +108,8 @@ export async function streamToBuffer2(
 /**
  * ONLY AVAILABLE IN NODE.JS RUNTIME.
  *
- * Writes the content of a readstream to a local file. Returns a Promise which is completed after the file handle is closed.
- * If Promise is rejected, the reason will be set to the first error raised by either the
- * ReadableStream or the fs.WriteStream.
- *
- * @export
- * @param {NodeJS.ReadableStream} rs The read stream.
- * @param {string} file Destination file path.
- * @returns {Promise<void>}
- */
-export async function readStreamToLocalFile(
-  rs: NodeJS.ReadableStream,
-  file: string
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const ws = fs.createWriteStream(file);
-
-    // Set STREAM_DEBUG env var to log stream events while running tests
-    if (process.env.STREAM_DEBUG) {
-      rs.on("close", () => console.log("rs.close"));
-      rs.on("data", () => console.log("rs.data"));
-      rs.on("end", () => console.log("rs.end"));
-      rs.on("error", () => console.log("rs.error"));
-
-      ws.on("close", () => console.log("ws.close"));
-      ws.on("drain", () => console.log("ws.drain"));
-      ws.on("error", () => console.log("ws.error"));
-      ws.on("finish", () => console.log("ws.finish"));
-      ws.on("pipe", () => console.log("ws.pipe"));
-      ws.on("unpipe", () => console.log("ws.unpipe"));
-    }
-
-    let error: Error;
-
-    rs.on("error", (err: Error) => {
-      // First error wins
-      if (!error) {
-        error = err;
-      }
-
-      // When rs.error is raised, rs.end will never be raised automatically, so it must be raised manually
-      // to ensure ws.close is eventually raised.
-      rs.emit("end");
-    });
-
-    ws.on("error", (err: Error) => {
-      // First error wins
-      if (!error) {
-        error = err;
-      }
-    });
-
-    ws.on("close", () => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    });
-
-    rs.pipe(ws);
-  });
-}
-
-/**
- * ONLY AVAILABLE IN NODE.JS RUNTIME.
- *
  * Promisified version of fs.stat().
  */
-export const fsStat = util.promisify(isNode ? fs.stat : function stat() { });
+export const fsStat = util.promisify(isNode ? fs.stat : function stat() {});
+
+export const fsCreateReadStream = fs.createReadStream;

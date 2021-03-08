@@ -8,7 +8,7 @@ import {
   isResourceValid,
   ResourceType
 } from "../../common";
-import { PartitionKeyDefinition } from "../../documents";
+import { PartitionKey, PartitionKeyDefinition } from "../../documents";
 import { SqlQuerySpec } from "../../queryExecutionContext";
 import { QueryIterator } from "../../queryIterator";
 import { FeedOptions, RequestOptions, ResourceResponse, Response } from "../../request";
@@ -20,6 +20,9 @@ import { Scripts } from "../Script/Scripts";
 import { ContainerDefinition } from "./ContainerDefinition";
 import { ContainerResponse } from "./ContainerResponse";
 import { PartitionKeyRange } from "./PartitionKeyRange";
+import { Offer, OfferDefinition } from "../Offer";
+import { OfferResponse } from "../Offer/OfferResponse";
+import { Resource } from "../Resource";
 
 /**
  * Operations for reading, replacing, or deleting a specific, existing container by id.
@@ -77,14 +80,14 @@ export class Container {
   /**
    * Returns a reference URL to the resource. Used for linking in Permissions.
    */
-  public get url() {
+  public get url(): string {
     return createDocumentCollectionUri(this.database.id, this.id);
   }
 
   /**
    * Returns a container instance. Note: You should get this from `database.container(id)`, rather than creating your own object.
-   * @param database The parent {@link Database}.
-   * @param id The id of the given container.
+   * @param database - The parent {@link Database}.
+   * @param id - The id of the given container.
    * @hidden
    */
   constructor(
@@ -98,12 +101,12 @@ export class Container {
    *
    * Use `.items` for creating new items, or querying/reading all items.
    *
-   * @param id The id of the {@link Item}.
-   * @param partitionKeyValue The value of the {@link Item} partition key
+   * @param id - The id of the {@link Item}.
+   * @param partitionKeyValue - The value of the {@link Item} partition key
    * @example Replace an item
-   * const {body: replacedItem} = await container.item("<item id>", "<partition key value>").replace({id: "<item id>", title: "Updated post", authorID: 5});
+   * `const {body: replacedItem} = await container.item("<item id>", "<partition key value>").replace({id: "<item id>", title: "Updated post", authorID: 5});`
    */
-  public item(id: string, partitionKeyValue?: any): Item {
+  public item(id: string, partitionKeyValue?: PartitionKey): Item {
     return new Item(this, id, partitionKeyValue, this.clientContext);
   }
 
@@ -111,7 +114,7 @@ export class Container {
    * Used to read, replace, or delete a specific, existing {@link Conflict} by id.
    *
    * Use `.conflicts` for creating new conflicts, or querying/reading all conflicts.
-   * @param id The id of the {@link Conflict}.
+   * @param id - The id of the {@link Conflict}.
    */
   public conflict(id: string): Conflict {
     return new Conflict(this, id, this.clientContext);
@@ -172,9 +175,6 @@ export class Container {
   /**
    * Gets the partition key definition first by looking into the cache otherwise by reading the collection.
    * @deprecated This method has been renamed to readPartitionKeyDefinition.
-   * @param {string} collectionLink   - Link to the collection whose partition key needs to be extracted.
-   * @param {function} callback       - \
-   * The arguments to the callback are(in order): error, partitionKeyDefinition, response object and response headers
    */
   public async getPartitionKeyDefinition(): Promise<ResourceResponse<PartitionKeyDefinition>> {
     return this.readPartitionKeyDefinition();
@@ -182,10 +182,7 @@ export class Container {
 
   /**
    * Gets the partition key definition first by looking into the cache otherwise by reading the collection.
-   * @ignore
-   * @param {string} collectionLink   - Link to the collection whose partition key needs to be extracted.
-   * @param {function} callback       - \
-   * The arguments to the callback are(in order): error, partitionKeyDefinition, response object and response headers
+   * @hidden
    */
   public async readPartitionKeyDefinition(): Promise<ResourceResponse<PartitionKeyDefinition>> {
     // $ISSUE-felixfan-2016-03-17: Make name based path and link based path use the same key
@@ -204,6 +201,27 @@ export class Container {
       headers,
       statusCode
     );
+  }
+
+  /**
+   * Gets offer on container. If none exists, returns an OfferResponse with undefined.
+   */
+  public async readOffer(options: RequestOptions = {}): Promise<OfferResponse> {
+    const { resource: container } = await this.read();
+    const path = "/offers";
+    const url = container._self;
+    const response = await this.clientContext.queryFeed<OfferDefinition & Resource[]>({
+      path,
+      resourceId: "",
+      resourceType: ResourceType.offer,
+      query: `SELECT * from root where root.resource = "${url}"`,
+      resultFn: (result) => result.Offers,
+      options
+    });
+    const offer = response.result[0]
+      ? new Offer(this.database.client, response.result[0].id, this.clientContext)
+      : undefined;
+    return new OfferResponse(response.result[0], response.headers, response.code, offer);
   }
 
   public async getQueryPlan(

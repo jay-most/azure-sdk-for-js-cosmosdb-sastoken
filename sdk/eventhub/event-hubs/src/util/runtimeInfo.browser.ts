@@ -1,7 +1,8 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 interface Window {}
-declare var self: Window & typeof globalThis & { navigator: Navigator };
+declare let self: Window & typeof globalThis & { navigator: Navigator };
 
 interface Navigator {
   /**
@@ -12,7 +13,6 @@ interface Navigator {
 
 /**
  * Returns information about the platform this function is being run on.
- * @ignore
  * @internal
  */
 export function getRuntimeInfo(): string {

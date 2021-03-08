@@ -8,6 +8,8 @@ import { Container, Containers } from "../Container";
 import { User, Users } from "../User";
 import { DatabaseDefinition } from "./DatabaseDefinition";
 import { DatabaseResponse } from "./DatabaseResponse";
+import { OfferResponse, OfferDefinition, Offer } from "../Offer";
+import { Resource } from "../Resource";
 
 /**
  * Operations for reading or deleting an existing database.
@@ -23,7 +25,7 @@ export class Database {
   /**
    * Used for creating new containers, or querying/reading all containers.
    *
-   * Use `.container(id)` to read, replace, or delete a specific, existing {@link Database} by id.
+   * Use `.database(id)` to read, replace, or delete a specific, existing {@link Database} by id.
    *
    * @example Create a new container
    * ```typescript
@@ -41,7 +43,7 @@ export class Database {
   /**
    * Returns a reference URL to the resource. Used for linking in Permissions.
    */
-  public get url() {
+  public get url(): string {
     return createDatabaseUri(this.id);
   }
 
@@ -105,5 +107,26 @@ export class Database {
       options
     });
     return new DatabaseResponse(response.result, response.headers, response.code, this);
+  }
+
+  /**
+   * Gets offer on database. If none exists, returns an OfferResponse with undefined.
+   */
+  public async readOffer(options: RequestOptions = {}): Promise<OfferResponse> {
+    const { resource: record } = await this.read();
+    const path = "/offers";
+    const url = record._self;
+    const response = await this.clientContext.queryFeed<OfferDefinition & Resource[]>({
+      path,
+      resourceId: "",
+      resourceType: ResourceType.offer,
+      query: `SELECT * from root where root.resource = "${url}"`,
+      resultFn: (result) => result.Offers,
+      options
+    });
+    const offer = response.result[0]
+      ? new Offer(this.client, response.result[0].id, this.clientContext)
+      : undefined;
+    return new OfferResponse(response.result[0], response.headers, response.code, offer);
   }
 }

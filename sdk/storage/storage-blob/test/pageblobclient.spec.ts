@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import * as dotenv from "dotenv";
 import {
@@ -15,7 +18,7 @@ import {
   BlobServiceClient
 } from "../src";
 import { record, Recorder } from "@azure/test-utils-recorder";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("PageBlobClient", () => {
   let blobServiceClient: BlobServiceClient;
@@ -27,7 +30,7 @@ describe("PageBlobClient", () => {
 
   let recorder: Recorder;
 
-  beforeEach(async function () {
+  beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
     blobServiceClient = getBSU();
     containerName = recorder.getUniqueName("container");
@@ -38,9 +41,9 @@ describe("PageBlobClient", () => {
     pageBlobClient = blobClient.getPageBlobClient();
   });
 
-  afterEach(async function () {
+  afterEach(async function() {
     await containerClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("create with default parameters", async () => {
@@ -91,11 +94,18 @@ describe("PageBlobClient", () => {
       const properties = await blobClient.getProperties();
       assert.equal(properties.accessTier, options.tier);
     } catch (err) {
-      if (err.message.indexOf("AccessTierNotSupportedForBlobType") == -1) {
-        // not found
-        assert.fail("Error thrown while it's not AccessTierNotSupportedForBlobType.");
-      }
+      assert.ok(err.message.startsWith("The access tier is not supported for this blob type."));
     }
+  });
+
+  it("createIfNotExists", async () => {
+    const res = await pageBlobClient.createIfNotExists(512);
+    assert.ok(res.succeeded);
+    assert.ok(res.etag);
+
+    const res2 = await pageBlobClient.createIfNotExists(512);
+    assert.ok(!res2.succeeded);
+    assert.equal(res2.errorCode, "BlobAlreadyExists");
   });
 
   it("uploadPages", async () => {
@@ -121,10 +131,10 @@ describe("PageBlobClient", () => {
     assert.equal(await bodyToString(result, 1024), "\u0000".repeat(1024));
 
     await pageBlobClient.uploadPages("a".repeat(512), 0, 512, {
-      onProgress: () => { }
+      onProgress: () => {}
     });
     await pageBlobClient.uploadPages("b".repeat(512), 512, 512, {
-      onProgress: () => { }
+      onProgress: () => {}
     });
 
     const page1 = await pageBlobClient.download(0, 512);
@@ -185,7 +195,7 @@ describe("PageBlobClient", () => {
     assert.equal(rangesDiff.clearRange![0].count, 511);
   });
 
-  it("getPageRangesDiffForManagedDisks", async function () {
+  it("getPageRangesDiffForManagedDisks", async function(): Promise<void> {
     let mdBlobServiceClient: BlobServiceClient;
     try {
       mdBlobServiceClient = getGenericBSU("MD_", "");
@@ -214,7 +224,11 @@ describe("PageBlobClient", () => {
     await mdPageBlobClient.clearPages(512, 512);
 
     const snapshotUrl = mdPageBlobClient.withSnapshot(snapshotResult.snapshot!).url;
-    const rangesDiff = await mdPageBlobClient.getPageRangesDiffForManagedDisks(0, 1024, snapshotUrl);
+    const rangesDiff = await mdPageBlobClient.getPageRangesDiffForManagedDisks(
+      0,
+      1024,
+      snapshotUrl
+    );
 
     assert.equal(rangesDiff.pageRange![0].offset, 0);
     assert.equal(rangesDiff.pageRange![0].count, 511);
@@ -250,7 +264,12 @@ describe("PageBlobClient", () => {
         transactionalContentCrc64: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
       });
     } catch (err) {
-      if (err instanceof Error && err.message.indexOf("Crc64Mismatch") != -1) {
+      if (
+        err instanceof Error &&
+        err.message.startsWith(
+          "The CRC64 value specified in the request did not match with the CRC64 value calculated by the server."
+        )
+      ) {
         exceptionCaught = true;
       }
     }

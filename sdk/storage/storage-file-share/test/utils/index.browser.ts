@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { AnonymousCredential } from "../../src/credentials/AnonymousCredential";
 import { ShareServiceClient } from "../../src/ShareServiceClient";
 import { newPipeline } from "../../src/Pipeline";
@@ -13,8 +16,8 @@ export function getGenericBSU(
 
   let accountName: string | undefined;
   let accountSAS: string | undefined;
-  accountName = (window as any).__env__[accountNameEnvVar];
-  accountSAS = (window as any).__env__[accountSASEnvVar];
+  accountName = (self as any).__env__[accountNameEnvVar];
+  accountSAS = (self as any).__env__[accountSASEnvVar];
 
   if (!accountName || !accountSAS || accountName === "" || accountSAS === "") {
     throw new Error(
@@ -43,12 +46,16 @@ export function getAlternateBSU(): ShareServiceClient {
   return getGenericBSU("SECONDARY_", "-secondary");
 }
 
+export function getSoftDeleteBSU(): ShareServiceClient {
+  return getGenericBSU("SOFT_DELETE_");
+}
+
 /**
  * Read body from downloading operation methods to string.
- * Work on both Node.js and browser environment.
+ * Works in both Node.js and browsers.
  *
- * @param response Convenience layer methods response with downloaded body
- * @param length Length of Readable stream, needed for Node.js environment
+ * @param response - Convenience layer methods response with downloaded body
+ * @param length - Length of Readable stream, needed for Node.js environment
  */
 export async function bodyToString(
   response: {
@@ -102,7 +109,7 @@ export function arrayBufferEqual(buf1: ArrayBuffer, buf2: ArrayBuffer): boolean 
 }
 
 export function isIE(): boolean {
-  const sAgent = window.navigator.userAgent;
+  const sAgent = self.navigator.userAgent;
   const Idx = sAgent.indexOf("MSIE");
 
   // If IE, return version number.
@@ -132,6 +139,35 @@ export function getBrowserFile(name: string, size: number): File {
 }
 
 export function getSASConnectionStringFromEnvironment(): string {
-  const env = (window as any).__env__;
+  const env = (self as any).__env__;
   return `BlobEndpoint=https://${env.ACCOUNT_NAME}.blob.core.windows.net/;QueueEndpoint=https://${env.ACCOUNT_NAME}.queue.core.windows.net/;FileEndpoint=https://${env.ACCOUNT_NAME}.file.core.windows.net/;TableEndpoint=https://${env.ACCOUNT_NAME}.table.core.windows.net/;SharedAccessSignature=${env.ACCOUNT_SAS}`;
+}
+
+export function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (a.length != b.length) return false;
+
+  for (let i = 0; i < a.length; ++i) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Compare the content of body from downloading operation methods with a Uint8Array.
+ * Works in both Node.js and browsers.
+ *
+ * @param response - Convenience layer methods response with downloaded body
+ * @param uint8arry -
+ */
+export async function compareBodyWithUint8Array(
+  response: {
+    readableStreamBody?: NodeJS.ReadableStream;
+    blobBody?: Promise<Blob>;
+  },
+  uint8arry: Uint8Array
+): Promise<boolean> {
+  const blob = await response.blobBody!;
+  return arraysEqual(uint8arry, new Uint8Array(await blob.arrayBuffer()));
 }

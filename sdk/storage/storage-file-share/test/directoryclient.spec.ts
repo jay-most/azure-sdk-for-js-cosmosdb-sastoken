@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import { getBSU, recorderEnvSetup } from "./utils";
 import * as dotenv from "dotenv";
@@ -9,7 +12,7 @@ import { TestTracer, setTracer, SpanGraph } from "@azure/core-tracing";
 import { URLBuilder } from "@azure/core-http";
 import { MockPolicyFactory } from "./utils/MockPolicyFactory";
 import { Pipeline } from "../src/Pipeline";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("DirectoryClient", () => {
   let shareName: string;
@@ -18,7 +21,7 @@ describe("DirectoryClient", () => {
   let dirClient: ShareDirectoryClient;
   let defaultDirCreateResp: DirectoryCreateResponse;
   let recorder: Recorder;
-  let fullDirAttributes = new FileSystemAttributes();
+  const fullDirAttributes = new FileSystemAttributes();
   fullDirAttributes.readonly = true;
   fullDirAttributes.hidden = true;
   fullDirAttributes.system = true;
@@ -28,7 +31,7 @@ describe("DirectoryClient", () => {
   fullDirAttributes.notContentIndexed = true;
   fullDirAttributes.noScrubData = true;
 
-  beforeEach(async function () {
+  beforeEach(async function() {
     recorder = record(this, recorderEnvSetup);
     const serviceClient = getBSU();
     shareName = recorder.getUniqueName("share");
@@ -49,9 +52,9 @@ describe("DirectoryClient", () => {
     assert.ok(defaultDirCreateResp.filePermissionKey!);
   });
 
-  afterEach(async function () {
+  afterEach(async function() {
     await shareClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("setMetadata", async () => {
@@ -150,6 +153,44 @@ describe("DirectoryClient", () => {
     assert.ok(result.fileChangeOn!);
     assert.ok(result.fileId!);
     assert.ok(result.fileParentId!);
+  });
+
+  it("createIfNotExists", async () => {
+    const res = await dirClient.createIfNotExists();
+    assert.ok(!res.succeeded);
+    assert.equal(res.errorCode, "ResourceAlreadyExists");
+
+    const dirClient2 = shareClient.getDirectoryClient(recorder.getUniqueName(dirName));
+    const res2 = await dirClient2.createIfNotExists();
+    assert.ok(res2.succeeded);
+
+    await dirClient2.delete();
+  });
+
+  it("deleteIfExists", async () => {
+    const dirClient2 = shareClient.getDirectoryClient(recorder.getUniqueName(dirName));
+    const res = await dirClient2.deleteIfExists();
+    assert.ok(!res.succeeded);
+    assert.equal(res.errorCode, "ResourceNotFound");
+
+    await dirClient2.create();
+    const res2 = await dirClient2.deleteIfExists();
+    assert.ok(res2.succeeded);
+  });
+
+  it("deleteIfExists when parent not exists ", async () => {
+    const subDirName = recorder.getUniqueName("subdir");
+    const dirClient2 = dirClient.getDirectoryClient(subDirName);
+    const dirClient3 = dirClient2.getDirectoryClient(subDirName);
+    const res = await dirClient3.deleteIfExists();
+    assert.ok(!res.succeeded);
+    assert.equal(res.errorCode, "ParentNotFound");
+  });
+
+  it("exists", async () => {
+    assert.ok(await dirClient.exists());
+    const dirClient2 = shareClient.getDirectoryClient(recorder.getUniqueName(dirName));
+    assert.ok(!(await dirClient2.exists()));
   });
 
   it("setProperties with default parameters", async () => {
@@ -449,7 +490,7 @@ describe("DirectoryClient", () => {
       subFileClients.push(subFileClient);
     }
 
-    const iter = await rootDirClient.listFilesAndDirectories({ prefix });
+    const iter = rootDirClient.listFilesAndDirectories({ prefix });
     let entity = (await iter.next()).value;
     assert.ok(entity.name.startsWith(prefix));
     if (entity.kind == "file") {
@@ -630,7 +671,7 @@ describe("DirectoryClient", () => {
     const tracer = new TestTracer();
     setTracer(tracer);
     const rootSpan = tracer.startSpan("root");
-    const spanOptions = { parent: rootSpan };
+    const spanOptions = { parent: rootSpan.context() };
     const tracingOptions = { spanOptions };
     const directoryName = recorder.getUniqueName("directory");
     const { directoryClient: subDirClient } = await dirClient.createSubdirectory(directoryName, {
@@ -818,13 +859,21 @@ describe("DirectoryClient", () => {
 
       const handle = result.handleList[0];
       const closeResp = await mockDirClient.forceCloseHandle(handle.handleId);
-      assert.equal(closeResp.closeFailureCount, 1, "Number of handles failed to close is not as set.")
+      assert.equal(
+        closeResp.closeFailureCount,
+        1,
+        "Number of handles failed to close is not as set."
+      );
     }
   });
 
   it("forceCloseAllHandles return correct closeFailureCount", async () => {
     const closeRes = await dirClient.forceCloseAllHandles();
-    assert.equal(closeRes.closeFailureCount, 0, "The closeFailureCount is not set to 0 as default.");
+    assert.equal(
+      closeRes.closeFailureCount,
+      0,
+      "The closeFailureCount is not set to 0 as default."
+    );
   });
 });
 
@@ -874,5 +923,24 @@ describe("ShareDirectoryClient - Verify Name Properties", () => {
 
   it("verify endpoint without dots", async () => {
     verifyNameProperties(`https://localhost:80/${accountName}/${shareName}/${dirPath}/${baseName}`);
+  });
+
+  it("verify custom endpoint without valid accountName", async () => {
+    const newClient = new ShareDirectoryClient(
+      `https://customdomain.com/${shareName}/${dirPath}/${baseName}`
+    );
+
+    assert.equal(newClient.accountName, "", "Account name is not the same as the one provided.");
+    assert.equal(newClient.shareName, shareName, "Share name is not the same as the one provided.");
+    assert.equal(
+      newClient.path,
+      dirPath + "/" + baseName,
+      "DirPath is not the same as the one provided."
+    );
+    assert.equal(
+      newClient.name,
+      baseName,
+      "DirectoryClient name is not the same as the baseName of the provided directory URI"
+    );
   });
 });

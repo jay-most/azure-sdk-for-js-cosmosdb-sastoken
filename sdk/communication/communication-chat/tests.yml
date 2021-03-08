@@ -1,0 +1,9 @@
+trigger: none
+
+stages:
+  - template: /eng/pipelines/templates/stages/archetype-sdk-tests.yml
+    parameters:
+      PackageName: "@azure/communication-chat"
+      ServiceDirectory: communication
+      MatrixFilters:
+        - DependencyVersion=^$

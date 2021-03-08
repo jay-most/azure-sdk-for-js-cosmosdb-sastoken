@@ -1,15 +1,15 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 import { Constants, RetryOptions } from "@azure/core-amqp";
+import { isDefined } from "./typeGuards";
 
 /**
  * @internal
- * @ignore
  */
 export function getRetryAttemptTimeoutInMs(retryOptions: RetryOptions | undefined): number {
   const timeoutInMs =
-    retryOptions == undefined ||
+    !isDefined(retryOptions) ||
     typeof retryOptions.timeoutInMs !== "number" ||
     !isFinite(retryOptions.timeoutInMs) ||
     retryOptions.timeoutInMs < Constants.defaultOperationTimeoutInMs

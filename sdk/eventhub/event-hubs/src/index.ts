@@ -1,14 +1,16 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 /// <reference lib="esnext.asynciterable" />
 
 export { EventData, ReceivedEventData } from "./eventData";
 export { WebSocketImpl } from "rhea-promise";
 export { LastEnqueuedEventProperties } from "./eventHubReceiver";
-export { OperationOptions, TracingOptions } from "./util/operationOptions";
+export { OperationOptions } from "./util/operationOptions";
 export {
   EventHubClientOptions,
+  EventHubConsumerClientOptions,
+  LoadBalancingOptions,
   SendBatchOptions,
   CreateBatchOptions,
   GetPartitionIdsOptions,
@@ -33,5 +35,10 @@ export { EventDataBatch, TryAddOptions } from "./eventDataBatch";
 export { Checkpoint } from "./partitionProcessor";
 export { CheckpointStore, PartitionOwnership } from "./eventProcessor";
 export { CloseReason } from "./models/public";
-export { MessagingError, RetryOptions, TokenCredential, WebSocketOptions } from "@azure/core-amqp";
+export { MessagingError, RetryOptions, RetryMode, WebSocketOptions } from "@azure/core-amqp";
+export { TokenCredential } from "@azure/core-auth";
 export { logger } from "./log";
+export {
+  parseEventHubConnectionString,
+  EventHubConnectionStringProperties
+} from "./util/connectionStringUtils";

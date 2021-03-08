@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+/* eslint-disable no-invalid-this */
 
 import { HttpOperationResponse, RequestOptionsBase } from "@azure/core-http";
 import { AbortSignalLike } from "@azure/abort-controller";
@@ -41,19 +42,20 @@ async function update(
 
   let response: HttpOperationResponse;
   const doFinalResponse = previousResponse && previousResponse.parsedBody.doFinalResponse;
+  const newState = { ...this.state };
 
   if (!initialResponse) {
     response = await client!.sendInitialRequest(new TestWebResource(abortSignal));
-    this.state.initialResponse = response;
-    this.state.isStarted = true;
+    newState.initialResponse = response;
+    newState.isStarted = true;
   } else if (doFinalResponse) {
     response = await client!.sendFinalRequest(new TestWebResource(abortSignal));
-    this.state.isCompleted = true;
-    this.state.result = "Done";
-    this.state.previousResponse = response;
+    newState.isCompleted = true;
+    newState.result = "Done";
+    newState.previousResponse = response;
   } else {
     response = await client!.sendRequest(new TestWebResource(abortSignal));
-    this.state.previousResponse = response;
+    newState.previousResponse = response;
   }
 
   if (!response) {
@@ -62,10 +64,10 @@ async function update(
 
   // Progress only after the poller has started and before the poller is done
   if (initialResponse && !doFinalResponse && options.fireProgress) {
-    options.fireProgress(this.state);
+    options.fireProgress(newState);
   }
 
-  return makeOperation(this.state);
+  return makeOperation(newState);
 }
 
 async function cancel(
@@ -77,7 +79,7 @@ async function cancel(
 
   if (abortSignal && abortSignal.aborted) {
     // Simulating a try catch of an HTTP request that's given an aborted abortSignal.
-    return await this.update({
+    return this.update({
       abortSignal
     }); // This will throw
   }

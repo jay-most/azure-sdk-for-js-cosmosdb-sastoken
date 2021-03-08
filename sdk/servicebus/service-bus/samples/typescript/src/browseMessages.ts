@@ -1,10 +1,10 @@
 /*
   Copyright (c) Microsoft Corporation. All rights reserved.
   Licensed under the MIT Licence.
+  
+  This sample demonstrates how the peekMessages() function can be used to browse a Service Bus message.
 
-  This sample demonstrates how the peek() function can be used to browse a Service Bus message.
-
-  See https://docs.microsoft.com/en-us/azure/service-bus-messaging/message-browsing to learn
+  See https://docs.microsoft.com/azure/service-bus-messaging/message-browsing to learn
   about message browsing.
 
   Setup: Please run "sendMessages.ts" sample before running this to populate the queue/topic
@@ -17,25 +17,25 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 // Define connection string and related Service Bus entity names here
-const connectionString = process.env.SERVICE_BUS_CONNECTION_STRING || "<connection string>";
+const connectionString = process.env.SERVICEBUS_CONNECTION_STRING || "<connection string>";
 const queueName = process.env.QUEUE_NAME || "<queue name>";
 
 export async function main() {
-  const sbClient = ServiceBusClient.createFromConnectionString(connectionString);
+  const sbClient = new ServiceBusClient(connectionString);
 
-  // If using Topics & Subscription, use createSubscriptionClient to peek from the subscription
-  const queueClient = sbClient.createQueueClient(queueName);
+  // If receiving from a subscription you can use the createReceiver(topicName, subscriptionName) overload
+  const queueReceiver = sbClient.createReceiver(queueName);
 
   try {
     for (let i = 0; i < 20; i++) {
-      const messages = await queueClient.peek();
-      if (!messages.length) {
+      const [message] = await queueReceiver.peekMessages(1);
+      if (!message) {
         console.log("No more messages to peek");
         break;
       }
-      console.log(`Peeking message #${i}: ${messages[0].body}`);
+      console.log(`Peeking message #${i}: ${message.body}`);
     }
-    await queueClient.close();
+    await queueReceiver.close();
   } finally {
     await sbClient.close();
   }
@@ -43,4 +43,5 @@ export async function main() {
 
 main().catch((err) => {
   console.log("Error occurred: ", err);
+  process.exit(1);
 });

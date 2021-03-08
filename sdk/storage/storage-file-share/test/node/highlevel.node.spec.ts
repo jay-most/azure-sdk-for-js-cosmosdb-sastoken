@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
@@ -8,7 +11,7 @@ import { RetriableReadableStreamOptions } from "../../src/utils/RetriableReadabl
 import { ShareClient, ShareDirectoryClient, ShareFileClient } from "../../src";
 import { readStreamToLocalFileWithLogs } from "../../test/utils/testutils.node";
 import { record, Recorder } from "@azure/test-utils-recorder";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 // tslint:disable:no-empty
 describe("Highlevel Node.js only", () => {
@@ -41,8 +44,10 @@ describe("Highlevel Node.js only", () => {
   });
 
   afterEach(async function() {
-    await shareClient.delete();
-    recorder.stop();
+    if (!this.currentTest?.isPending()) {
+      await shareClient.delete();
+      await recorder.stop();
+    }
   });
 
   before(async () => {
@@ -218,6 +223,34 @@ describe("Highlevel Node.js only", () => {
     assert.ok(eventTriggered);
   }).timeout(timeoutForLargeFileUploadingTest);
 
+  it("uploadData should work with Buffer, ArrayBuffer and ArrayBufferView", async () => {
+    const byteLength = 10;
+    const arrayBuf = new ArrayBuffer(byteLength);
+    const uint8Array = new Uint8Array(arrayBuf);
+    for (let i = 0; i < byteLength; i++) {
+      uint8Array[i] = i;
+    }
+
+    await fileClient.uploadData(arrayBuf);
+    const res = await fileClient.downloadToBuffer();
+    assert.ok(res.equals(Buffer.from(arrayBuf)));
+
+    const uint8ArrayPartial = new Uint8Array(arrayBuf, 1, 3);
+    await fileClient.uploadData(uint8ArrayPartial);
+    const res1 = await fileClient.downloadToBuffer();
+    assert.ok(res1.equals(Buffer.from(arrayBuf, 1, 3)));
+
+    const uint16Array = new Uint16Array(arrayBuf, 4, 2);
+    await fileClient.uploadData(uint16Array);
+    const res2 = await fileClient.downloadToBuffer();
+    assert.ok(res2.equals(Buffer.from(arrayBuf, 4, 2 * 2)));
+
+    const buf = Buffer.from(arrayBuf, 0, 5);
+    await fileClient.uploadData(buf);
+    const res3 = await fileClient.downloadToBuffer();
+    assert.ok(res3.equals(buf));
+  });
+
   it("downloadToBuffer should success", async () => {
     recorder.skip("node", "Temp file - recorder doesn't support saving the file");
     const rs = fs.createReadStream(tempFileLarge);
@@ -343,24 +376,24 @@ describe("Highlevel Node.js only", () => {
     assert.ok(eventTriggered);
   });
 
-  it("fileClient.download should success when internal stream unexcepted ends at the stream end", async () => {
+  it("fileClient.download should success when internal stream unexpected ends at the stream end", async () => {
     recorder.skip("node", "Temp file - recorder doesn't support saving the file");
     await fileClient.uploadFile(tempFileSmall, {
       rangeSize: 4 * 1024 * 1024,
       concurrency: 20
     });
 
-    let retirableReadableStreamOptions: RetriableReadableStreamOptions;
+    let retriableReadableStreamOptions: RetriableReadableStreamOptions;
     const downloadResponse = await fileClient.download(0, undefined, {
       maxRetryRequests: 1,
       onProgress: (ev) => {
         if (ev.loadedBytes >= tempFileSmallLength) {
-          retirableReadableStreamOptions.doInjectErrorOnce = true;
+          retriableReadableStreamOptions.doInjectErrorOnce = true;
         }
       }
     });
 
-    retirableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
+    retriableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
 
     const downloadedFile = path.join(tempFolderPath, recorder.getUniqueName("downloadfile."));
     await readStreamToLocalFileWithLogs(downloadResponse.readableStreamBody!, downloadedFile);
@@ -372,25 +405,25 @@ describe("Highlevel Node.js only", () => {
     assert.ok(downloadedData.equals(uploadedData));
   });
 
-  it("fileClient.download should download full data successfully when internal stream unexcepted ends", async () => {
+  it("fileClient.download should download full data successfully when internal stream unexpected ends", async () => {
     recorder.skip("node", "Temp file - recorder doesn't support saving the file");
     await fileClient.uploadFile(tempFileSmall, {
       rangeSize: 4 * 1024 * 1024,
       concurrency: 20
     });
 
-    let retirableReadableStreamOptions: RetriableReadableStreamOptions;
+    let retriableReadableStreamOptions: RetriableReadableStreamOptions;
     let injectedErrors = 0;
     const downloadResponse = await fileClient.download(0, undefined, {
       maxRetryRequests: 3,
       onProgress: () => {
         if (injectedErrors++ < 3) {
-          retirableReadableStreamOptions.doInjectErrorOnce = true;
+          retriableReadableStreamOptions.doInjectErrorOnce = true;
         }
       }
     });
 
-    retirableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
+    retriableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
 
     const downloadedFile = path.join(tempFolderPath, recorder.getUniqueName("downloadfile."));
     await readStreamToLocalFileWithLogs(downloadResponse.readableStreamBody!, downloadedFile);
@@ -402,7 +435,7 @@ describe("Highlevel Node.js only", () => {
     assert.ok(downloadedData.equals(uploadedData));
   });
 
-  it("fileClient.download should download partial data when internal stream unexcepted ends", async () => {
+  it("fileClient.download should download partial data when internal stream unexpected ends", async () => {
     recorder.skip("node", "Temp file - recorder doesn't support saving the file");
     await fileClient.uploadFile(tempFileSmall, {
       rangeSize: 4 * 1024 * 1024,
@@ -411,18 +444,18 @@ describe("Highlevel Node.js only", () => {
 
     const partialSize = 10 * 1024;
 
-    let retirableReadableStreamOptions: RetriableReadableStreamOptions;
+    let retriableReadableStreamOptions: RetriableReadableStreamOptions;
     let injectedErrors = 0;
     const downloadResponse = await fileClient.download(1, partialSize, {
       maxRetryRequests: 3,
       onProgress: () => {
         if (injectedErrors++ < 3) {
-          retirableReadableStreamOptions.doInjectErrorOnce = true;
+          retriableReadableStreamOptions.doInjectErrorOnce = true;
         }
       }
     });
 
-    retirableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
+    retriableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
 
     const downloadedFile = path.join(tempFolderPath, recorder.getUniqueName("downloadfile."));
     await readStreamToLocalFileWithLogs(downloadResponse.readableStreamBody!, downloadedFile);
@@ -443,7 +476,7 @@ describe("Highlevel Node.js only", () => {
 
     const downloadedFile = path.join(tempFolderPath, recorder.getUniqueName("downloadfile."));
 
-    let retirableReadableStreamOptions: RetriableReadableStreamOptions;
+    let retriableReadableStreamOptions: RetriableReadableStreamOptions;
     let injectedErrors = 0;
     let expectedError = false;
 
@@ -452,11 +485,11 @@ describe("Highlevel Node.js only", () => {
         maxRetryRequests: 0,
         onProgress: () => {
           if (injectedErrors++ < 1) {
-            retirableReadableStreamOptions.doInjectErrorOnce = true;
+            retriableReadableStreamOptions.doInjectErrorOnce = true;
           }
         }
       });
-      retirableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
+      retriableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
       await readStreamToLocalFileWithLogs(downloadResponse.readableStreamBody!, downloadedFile);
     } catch (error) {
       expectedError = true;
@@ -466,7 +499,7 @@ describe("Highlevel Node.js only", () => {
     fs.unlinkSync(downloadedFile);
   });
 
-  it("fileClient.download should abort after retrys", async () => {
+  it("fileClient.download should abort after retries", async () => {
     recorder.skip("node", "Temp file - recorder doesn't support saving the file");
     await fileClient.uploadFile(tempFileSmall, {
       rangeSize: 4 * 1024 * 1024,
@@ -475,7 +508,7 @@ describe("Highlevel Node.js only", () => {
 
     const downloadedFile = path.join(tempFolderPath, recorder.getUniqueName("downloadfile."));
 
-    let retirableReadableStreamOptions: RetriableReadableStreamOptions;
+    let retriableReadableStreamOptions: RetriableReadableStreamOptions;
     let injectedErrors = 0;
 
     try {
@@ -486,14 +519,14 @@ describe("Highlevel Node.js only", () => {
         onProgress: () => {
           if (injectedErrors++ < 2) {
             // Triger 2 times of retry
-            retirableReadableStreamOptions.doInjectErrorOnce = true;
+            retriableReadableStreamOptions.doInjectErrorOnce = true;
           } else {
             // Trigger aborter
             aborter.abort();
           }
         }
       });
-      retirableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
+      retriableReadableStreamOptions = (downloadResponse.readableStreamBody! as any).options;
       await readStreamToLocalFileWithLogs(downloadResponse.readableStreamBody!, downloadedFile);
     } catch (error) {
       assert.equal(error.name, "AbortError", "Unexpected error caught: " + error);

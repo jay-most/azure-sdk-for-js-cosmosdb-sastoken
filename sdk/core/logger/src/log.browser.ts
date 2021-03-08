@@ -1,7 +1,19 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
-const logFunction = console.debug || console.log;
-export function log(...args: any[]) {
-  logFunction(...args);
+export function log(...args: any[]): void {
+  if (args.length > 0) {
+    const firstArg = String(args[0]);
+    if (firstArg.includes(":error")) {
+      console.error(...args);
+    } else if (firstArg.includes(":warning")) {
+      console.warn(...args);
+    } else if (firstArg.includes(":info")) {
+      console.info(...args);
+    } else if (firstArg.includes(":verbose")) {
+      console.debug(...args);
+    } else {
+      console.debug(...args);
+    }
+  }
 }

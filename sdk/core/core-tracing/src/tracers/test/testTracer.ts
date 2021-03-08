@@ -1,8 +1,9 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-import { NoOpTracer } from "../noop/noOpTracer";
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import { TestSpan } from "./testSpan";
-import { SpanContext, SpanKind, SpanOptions } from "@opentelemetry/types";
+import { NoOpTracer } from "../noop/noOpTracer";
+import { SpanContext, SpanKind, SpanOptions, TraceFlags } from "@opentelemetry/api";
 
 /**
  * Simple representation of a Span that only has name and child relationships.
@@ -75,7 +76,7 @@ export class TestTracer extends NoOpTracer {
   /**
    * Return all Spans for a particular trace, grouped by their
    * parent Span in a tree-like structure
-   * @param traceId The traceId to return the graph for
+   * @param traceId - The traceId to return the graph for
    */
   getSpanGraph(traceId: string): SpanGraph {
     const traceSpans = this.knownSpans.filter((span) => {
@@ -112,8 +113,8 @@ export class TestTracer extends NoOpTracer {
 
   /**
    * Starts a new Span.
-   * @param name The name of the span.
-   * @param options The SpanOptions used during Span creation.
+   * @param name - The name of the span.
+   * @param options - The SpanOptions used during Span creation.
    */
   startSpan(name: string, options: SpanOptions = {}): TestSpan {
     const parentContext = this._getParentContext(options);
@@ -130,7 +131,8 @@ export class TestTracer extends NoOpTracer {
 
     const context: SpanContext = {
       traceId,
-      spanId: this.getNextSpanId()
+      spanId: this.getNextSpanId(),
+      traceFlags: TraceFlags.NONE
     };
     const span = new TestSpan(
       this,

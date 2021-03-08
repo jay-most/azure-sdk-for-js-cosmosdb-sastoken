@@ -1,9 +1,12 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import * as dotenv from "dotenv";
 import { extractConnectionStringParts } from "../../src/utils/utils.common";
 import { record, Recorder } from "@azure/test-utils-recorder";
 import { recorderEnvSetup } from "../utils";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("Utility Helpers Node.js only", () => {
   let recorder: Recorder;
@@ -33,11 +36,11 @@ describe("Utility Helpers Node.js only", () => {
   }
 
   beforeEach(async function() {
-    recorder = record(this,recorderEnvSetup);
+    recorder = record(this, recorderEnvSetup);
   });
 
   afterEach(async function() {
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("extractConnectionStringParts throws error when passed an invalid protocol in the connection string", async () => {

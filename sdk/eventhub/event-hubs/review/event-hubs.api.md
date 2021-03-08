@@ -6,11 +6,12 @@
 
 import { AbortSignalLike } from '@azure/abort-controller';
 import { MessagingError } from '@azure/core-amqp';
+import { OperationTracingOptions } from '@azure/core-tracing';
+import { RetryMode } from '@azure/core-amqp';
 import { RetryOptions } from '@azure/core-amqp';
-import { Span } from '@opentelemetry/types';
-import { SpanContext } from '@opentelemetry/types';
-import { SpanOptions } from '@opentelemetry/types';
-import { TokenCredential } from '@azure/core-amqp';
+import { Span } from '@opentelemetry/api';
+import { SpanContext } from '@opentelemetry/api';
+import { TokenCredential } from '@azure/core-auth';
 import { WebSocketImpl } from 'rhea-promise';
 import { WebSocketOptions } from '@azure/core-amqp';
 
@@ -26,10 +27,10 @@ export interface Checkpoint {
 
 // @public
 export interface CheckpointStore {
-    claimOwnership(partitionOwnership: PartitionOwnership[]): Promise<PartitionOwnership[]>;
-    listCheckpoints(fullyQualifiedNamespace: string, eventHubName: string, consumerGroup: string): Promise<Checkpoint[]>;
-    listOwnership(fullyQualifiedNamespace: string, eventHubName: string, consumerGroup: string): Promise<PartitionOwnership[]>;
-    updateCheckpoint(checkpoint: Checkpoint): Promise<void>;
+    claimOwnership(partitionOwnership: PartitionOwnership[], options?: OperationOptions): Promise<PartitionOwnership[]>;
+    listCheckpoints(fullyQualifiedNamespace: string, eventHubName: string, consumerGroup: string, options?: OperationOptions): Promise<Checkpoint[]>;
+    listOwnership(fullyQualifiedNamespace: string, eventHubName: string, consumerGroup: string, options?: OperationOptions): Promise<PartitionOwnership[]>;
+    updateCheckpoint(checkpoint: Checkpoint, options?: OperationOptions): Promise<void>;
 }
 
 // @public
@@ -59,9 +60,9 @@ export interface EventData {
 // @public
 export interface EventDataBatch {
     readonly count: number;
-    readonly maxSizeInBytes: number;
     // @internal
-    readonly _message: Buffer | undefined;
+    _generateMessage(): Buffer;
+    readonly maxSizeInBytes: number;
     // @internal
     readonly _messageSpanContexts: SpanContext[];
     // @internal
@@ -74,29 +75,45 @@ export interface EventDataBatch {
 
 // @public
 export interface EventHubClientOptions {
+    customEndpointAddress?: string;
     retryOptions?: RetryOptions;
     userAgent?: string;
     webSocketOptions?: WebSocketOptions;
 }
 
 // @public
+export interface EventHubConnectionStringProperties {
+    endpoint: string;
+    eventHubName?: string;
+    fullyQualifiedNamespace: string;
+    sharedAccessKey?: string;
+    sharedAccessKeyName?: string;
+    sharedAccessSignature?: string;
+}
+
+// @public
 export class EventHubConsumerClient {
-    constructor(consumerGroup: string, connectionString: string, options?: EventHubClientOptions);
-    constructor(consumerGroup: string, connectionString: string, checkpointStore: CheckpointStore, options?: EventHubClientOptions);
-    constructor(consumerGroup: string, connectionString: string, eventHubName: string, options?: EventHubClientOptions);
-    constructor(consumerGroup: string, connectionString: string, eventHubName: string, checkpointStore: CheckpointStore, options?: EventHubClientOptions);
-    constructor(consumerGroup: string, fullyQualifiedNamespace: string, eventHubName: string, credential: TokenCredential, options?: EventHubClientOptions);
-    constructor(consumerGroup: string, fullyQualifiedNamespace: string, eventHubName: string, credential: TokenCredential, checkpointStore: CheckpointStore, options?: EventHubClientOptions);
+    constructor(consumerGroup: string, connectionString: string, options?: EventHubConsumerClientOptions);
+    constructor(consumerGroup: string, connectionString: string, checkpointStore: CheckpointStore, options?: EventHubConsumerClientOptions);
+    constructor(consumerGroup: string, connectionString: string, eventHubName: string, options?: EventHubConsumerClientOptions);
+    constructor(consumerGroup: string, connectionString: string, eventHubName: string, checkpointStore: CheckpointStore, options?: EventHubConsumerClientOptions);
+    constructor(consumerGroup: string, fullyQualifiedNamespace: string, eventHubName: string, credential: TokenCredential, options?: EventHubConsumerClientOptions);
+    constructor(consumerGroup: string, fullyQualifiedNamespace: string, eventHubName: string, credential: TokenCredential, checkpointStore: CheckpointStore, options?: EventHubConsumerClientOptions);
     close(): Promise<void>;
     static defaultConsumerGroupName: string;
     get eventHubName(): string;
     get fullyQualifiedNamespace(): string;
     getEventHubProperties(options?: GetEventHubPropertiesOptions): Promise<EventHubProperties>;
-    getPartitionIds(options?: GetPartitionIdsOptions): Promise<string[]>;
+    getPartitionIds(options?: GetPartitionIdsOptions): Promise<Array<string>>;
     getPartitionProperties(partitionId: string, options?: GetPartitionPropertiesOptions): Promise<PartitionProperties>;
     subscribe(handlers: SubscriptionEventHandlers, options?: SubscribeOptions): Subscription;
     subscribe(partitionId: string, handlers: SubscriptionEventHandlers, options?: SubscribeOptions): Subscription;
     }
+
+// @public
+export interface EventHubConsumerClientOptions extends EventHubClientOptions {
+    loadBalancingOptions?: LoadBalancingOptions;
+}
 
 // @public
 export class EventHubProducerClient {
@@ -110,8 +127,9 @@ export class EventHubProducerClient {
     getEventHubProperties(options?: GetEventHubPropertiesOptions): Promise<EventHubProperties>;
     getPartitionIds(options?: GetPartitionIdsOptions): Promise<Array<string>>;
     getPartitionProperties(partitionId: string, options?: GetPartitionPropertiesOptions): Promise<PartitionProperties>;
-    sendBatch(batch: EventDataBatch, options?: SendBatchOptions): Promise<void>;
-}
+    sendBatch(batch: EventData[], options?: SendBatchOptions): Promise<void>;
+    sendBatch(batch: EventDataBatch, options?: OperationOptions): Promise<void>;
+    }
 
 // @public
 export interface EventHubProperties {
@@ -152,14 +170,25 @@ export interface LastEnqueuedEventProperties {
 export const latestEventPosition: EventPosition;
 
 // @public
+export interface LoadBalancingOptions {
+    partitionOwnershipExpirationIntervalInMs?: number;
+    strategy?: "balanced" | "greedy";
+    updateIntervalInMs?: number;
+}
+
+// @public
 export const logger: import("@azure/logger").AzureLogger;
 
 export { MessagingError }
 
 // @public
-export interface OperationOptions extends TracingOptions {
+export interface OperationOptions {
     abortSignal?: AbortSignalLike;
+    tracingOptions?: OperationTracingOptions;
 }
+
+// @public
+export function parseEventHubConnectionString(connectionString: string): Readonly<EventHubConnectionStringProperties>;
 
 // @public
 export interface PartitionContext {
@@ -220,20 +249,25 @@ export interface ReceivedEventData {
     };
 }
 
+export { RetryMode }
+
 export { RetryOptions }
 
 // @public
 export interface SendBatchOptions extends OperationOptions {
+    partitionId?: string;
+    partitionKey?: string;
 }
 
 // @public
-export interface SubscribeOptions extends TracingOptions {
+export interface SubscribeOptions {
     maxBatchSize?: number;
     maxWaitTimeInSeconds?: number;
     ownerLevel?: number;
     startPosition?: EventPosition | {
         [partitionId: string]: EventPosition;
     };
+    tracingOptions?: OperationTracingOptions;
     trackLastEnqueuedEventProperties?: boolean;
 }
 
@@ -254,15 +288,10 @@ export interface SubscriptionEventHandlers {
 export { TokenCredential }
 
 // @public
-export interface TracingOptions {
-    tracingOptions?: {
-        spanOptions?: SpanOptions;
-    };
-}
-
-// @public
 export interface TryAddOptions {
+    // @deprecated (undocumented)
     parentSpan?: Span | SpanContext;
+    tracingOptions?: OperationTracingOptions;
 }
 
 export { WebSocketImpl }

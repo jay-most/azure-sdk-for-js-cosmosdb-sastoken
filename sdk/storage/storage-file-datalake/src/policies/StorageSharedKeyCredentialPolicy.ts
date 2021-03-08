@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { RequestPolicy, RequestPolicyOptions, WebResource } from "@azure/core-http";
 
 import { StorageSharedKeyCredential } from "../credentials/StorageSharedKeyCredential";
@@ -7,29 +7,20 @@ import { HeaderConstants } from "../utils/constants";
 import { getURLPath, getURLQueries } from "../utils/utils.common";
 import { CredentialPolicy } from "./CredentialPolicy";
 
-
 /**
  * StorageSharedKeyCredentialPolicy is a policy used to sign HTTP request with a shared key.
- *
- * @export
- * @class StorageSharedKeyCredentialPolicy
- * @extends {CredentialPolicy}
  */
 export class StorageSharedKeyCredentialPolicy extends CredentialPolicy {
   /**
    * Reference to StorageSharedKeyCredential which generates StorageSharedKeyCredentialPolicy
-   *
-   * @type {StorageSharedKeyCredential}
-   * @memberof StorageSharedKeyCredentialPolicy
    */
   private readonly factory: StorageSharedKeyCredential;
 
   /**
    * Creates an instance of StorageSharedKeyCredentialPolicy.
-   * @param {RequestPolicy} nextPolicy
-   * @param {RequestPolicyOptions} options
-   * @param {StorageSharedKeyCredential} factory
-   * @memberof StorageSharedKeyCredentialPolicy
+   * @param nextPolicy -
+   * @param options -
+   * @param factory -
    */
   constructor(
     nextPolicy: RequestPolicy,
@@ -43,10 +34,7 @@ export class StorageSharedKeyCredentialPolicy extends CredentialPolicy {
   /**
    * Signs request.
    *
-   * @protected
-   * @param {WebResource} request
-   * @returns {WebResource}
-   * @memberof StorageSharedKeyCredentialPolicy
+   * @param request -
    */
   protected signRequest(request: WebResource): WebResource {
     request.headers.set(HeaderConstants.X_MS_DATE, new Date().toUTCString());
@@ -80,13 +68,6 @@ export class StorageSharedKeyCredentialPolicy extends CredentialPolicy {
       `SharedKey ${this.factory.accountName}:${signature}`
     );
 
-    // Workaround for https://github.com/axios/axios/issues/2107
-    // We should always keep the 'content-length' header once the issue is solved
-    // For a better explanation about this workaround, look here: https://github.com/Azure/azure-sdk-for-js/pull/3273
-    if (typeof request.body !== "function" && !(request.body && request.onUploadProgress)) {
-      request.headers.remove(HeaderConstants.CONTENT_LENGTH);
-    }
-
     // Workaround for node-fetch which will set content-type for dfs append data operations based on Patch
     if (typeof request.body !== "function" && !request.headers.get(HeaderConstants.CONTENT_TYPE)) {
       request.headers.set(HeaderConstants.CONTENT_TYPE, "");
@@ -103,11 +84,8 @@ export class StorageSharedKeyCredentialPolicy extends CredentialPolicy {
    * Retrieve header value according to shared key sign rules.
    * @see https://docs.microsoft.com/en-us/rest/api/storageservices/authenticate-with-shared-key
    *
-   * @private
-   * @param {WebResource} request
-   * @param {string} headerName
-   * @returns {string}
-   * @memberof StorageSharedKeyCredentialPolicy
+   * @param request -
+   * @param headerName -
    */
   private getHeaderValueToSign(request: WebResource, headerName: string): string {
     const value = request.headers.get(headerName);
@@ -137,10 +115,7 @@ export class StorageSharedKeyCredentialPolicy extends CredentialPolicy {
    * 6. Finally, append a new-line character to each canonicalized header in the resulting list.
    *    Construct the CanonicalizedHeaders string by concatenating all headers in this list into a single string.
    *
-   * @private
-   * @param {WebResource} request
-   * @returns {string}
-   * @memberof StorageSharedKeyCredentialPolicy
+   * @param request -
    */
   private getCanonicalizedHeadersString(request: WebResource): string {
     let headersArray = request.headers.headersArray().filter((value) => {
@@ -172,10 +147,7 @@ export class StorageSharedKeyCredentialPolicy extends CredentialPolicy {
   /**
    * Retrieves the webResource canonicalized resource string.
    *
-   * @private
-   * @param {WebResource} request
-   * @returns {string}
-   * @memberof StorageSharedKeyCredentialPolicy
+   * @param request -
    */
   private getCanonicalizedResourceString(request: WebResource): string {
     const path = getURLPath(request.url) || "/";

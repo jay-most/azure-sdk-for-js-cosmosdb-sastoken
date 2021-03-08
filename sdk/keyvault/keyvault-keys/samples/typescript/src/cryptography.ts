@@ -17,8 +17,7 @@ export async function main(): Promise<void> {
   // - AZURE_CLIENT_SECRET: The client secret for the registered application
   const credential = new DefaultAzureCredential();
 
-  const vaultName = process.env["KEYVAULT_NAME"] || "<keyvault-name>";
-  const url = `https://${vaultName}.vault.azure.net`;
+  const url = process.env["KEYVAULT_URI"] || "<keyvault-url>";
 
   // Connection to Azure Key Vault
   const client = new KeyClient(url, credential);
@@ -27,9 +26,12 @@ export async function main(): Promise<void> {
   const keyName = `key${uniqueString}`;
 
   // Connection to Azure Key Vault Cryptography functionality
-  let myWorkKey = await client.createKey(keyName, "RSA");
+  const myWorkKey = await client.createKey(keyName, "RSA");
 
-  const cryptoClient = new CryptographyClient(myWorkKey.id!, credential);
+  const cryptoClient = new CryptographyClient(
+    myWorkKey.id!, // You can use either the key or the key Id i.e. its url to create a CryptographyClient.
+    credential
+  );
 
   // Sign and Verify
   const signatureValue = "MySignature";
@@ -46,10 +48,13 @@ export async function main(): Promise<void> {
   console.log("verify result: ", verifyResult);
 
   // Encrypt and decrypt
-  const encrypt = await cryptoClient.encrypt("RSA1_5", Buffer.from("My Message"));
+  const encrypt = await cryptoClient.encrypt({
+    algorithm: "RSA1_5",
+    plaintext: Buffer.from("My Message")
+  });
   console.log("encrypt result: ", encrypt);
 
-  const decrypt = await cryptoClient.decrypt("RSA1_5", encrypt.result);
+  const decrypt = await cryptoClient.decrypt({ algorithm: "RSA1_5", ciphertext: encrypt.result });
   console.log("decrypt: ", decrypt.result.toString());
 
   // Wrap and unwrap

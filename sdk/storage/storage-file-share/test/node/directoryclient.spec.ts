@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import * as assert from "assert";
 import { getBSU, recorderEnvSetup } from "../utils";
 import * as dotenv from "dotenv";
@@ -8,7 +11,7 @@ import {
   ShareClient
 } from "../../src";
 import { record, Recorder } from "@azure/test-utils-recorder";
-dotenv.config({ path: "../.env" });
+dotenv.config();
 
 describe("DirectoryClient Node.js only", () => {
   let shareName: string;
@@ -33,7 +36,7 @@ describe("DirectoryClient Node.js only", () => {
   afterEach(async function() {
     await dirClient.delete();
     await shareClient.delete();
-    recorder.stop();
+    await recorder.stop();
   });
 
   it("can be created with a url and a credential", async () => {

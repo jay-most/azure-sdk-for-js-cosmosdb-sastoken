@@ -1,7 +1,11 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 import {
   BaseRequestPolicy,
   bearerTokenAuthenticationPolicy,
   deserializationPolicy,
+  disableResponseDecompressionPolicy,
   generateClientRequestIdPolicy,
   HttpClient as IHttpClient,
   HttpHeaders,
@@ -38,8 +42,8 @@ import {
 } from "./utils/constants";
 import { getCachedDefaultHttpClient } from "./utils/cache";
 
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 // Export following interfaces and types for customers who want to implement their
 // own RequestPolicy or HTTPClient
@@ -59,16 +63,10 @@ export {
 
 /**
  * Option interface for Pipeline constructor.
- *
- * @export
- * @interface PipelineOptions
  */
 export interface PipelineOptions {
   /**
    * Optional. Configures the HTTP client to send requests and receive responses.
-   *
-   * @type {IHttpClient}
-   * @memberof PipelineOptions
    */
   httpClient?: IHttpClient;
 }
@@ -80,32 +78,22 @@ export interface PipelineOptions {
  *
  * Refer to {@link newPipeline} and provided policies before implementing your
  * customized Pipeline.
- *
- * @export
- * @class Pipeline
  */
 export class Pipeline extends BlobPipeline {
   /**
    * A list of chained request policy factories.
-   *
-   * @type {RequestPolicyFactory[]}
-   * @memberof Pipeline
    */
   public readonly factories: RequestPolicyFactory[];
   /**
    * Configures pipeline logger and HTTP client.
-   *
-   * @type {PipelineOptions}
-   * @memberof Pipeline
    */
   public readonly options: PipelineOptions;
 
   /**
    * Creates an instance of Pipeline. Customize HTTPClient by implementing IHttpClient interface.
    *
-   * @param {RequestPolicyFactory[]} factories
-   * @param {PipelineOptions} [options={}]
-   * @memberof Pipeline
+   * @param factories -
+   * @param options -
    */
   constructor(factories: RequestPolicyFactory[], options: PipelineOptions = {}) {
     super(factories, options);
@@ -122,8 +110,7 @@ export class Pipeline extends BlobPipeline {
    * Transfer Pipeline object to ServiceClientOptions object which is required by
    * ServiceClient constructor.
    *
-   * @returns {ServiceClientOptions} The ServiceClientOptions object from this Pipeline.
-   * @memberof Pipeline
+   * @returns The ServiceClientOptions object from this Pipeline.
    */
   public toServiceClientOptions(): ServiceClientOptions {
     return {
@@ -135,9 +122,6 @@ export class Pipeline extends BlobPipeline {
 
 /**
  * Options interface for the {@link newPipeline} function.
- *
- * @export
- * @interface StoragePipelineOptions
  */
 export interface StoragePipelineOptions {
   /**
@@ -146,31 +130,19 @@ export interface StoragePipelineOptions {
   proxyOptions?: ProxyOptions;
   /**
    * Options for adding user agent details to outgoing requests.
-   *
-   * @type {UserAgentOptions}
-   * @memberof StoragePipelineOptions
    */
   userAgentOptions?: UserAgentOptions;
   /**
    * Configures the built-in retry policy behavior.
-   *
-   * @type {StorageRetryOptions}
-   * @memberof StoragePipelineOptions
    */
   retryOptions?: StorageRetryOptions;
   /**
    * Keep alive configurations. Default keep-alive is enabled.
-   *
-   * @type {KeepAliveOptions}
-   * @memberof StoragePipelineOptions
    */
   keepAliveOptions?: KeepAliveOptions;
 
   /**
    * Configures the HTTP client to send requests and receive responses.
-   *
-   * @type {IHttpClient}
-   * @memberof StoragePipelineOptions
    */
   httpClient?: IHttpClient;
 }
@@ -178,15 +150,17 @@ export interface StoragePipelineOptions {
 /**
  * Creates a new Pipeline object with Credential provided.
  *
- * @export
- * @param {StorageSharedKeyCredential | AnonymousCredential | TokenCredential} credential  Such as AnonymousCredential, StorageSharedKeyCredential or any credential from the @azure/identity package to authenticate requests to the service. You can also provide an object that implements the TokenCredential interface. If not specified, AnonymousCredential is used.
- * @param {StoragePipelineOptions} [pipelineOptions] Optional. Options.
- * @returns {Pipeline} A new Pipeline object.
+ * @param credential -  Such as AnonymousCredential, StorageSharedKeyCredential or any credential from the `@azure/identity` package to authenticate requests to the service. You can also provide an object that implements the TokenCredential interface. If not specified, AnonymousCredential is used.
+ * @param pipelineOptions - Optional. Options.
+ * @returns A new Pipeline object.
  */
 export function newPipeline(
-  credential: StorageSharedKeyCredential | AnonymousCredential | TokenCredential,
+  credential?: StorageSharedKeyCredential | AnonymousCredential | TokenCredential,
   pipelineOptions: StoragePipelineOptions = {}
 ): Pipeline {
+  if (credential === undefined) {
+    credential = new AnonymousCredential();
+  }
   // Order is important. Closer to the API at the top & closer to the network at the bottom.
   // The credential's policy factory must appear close to the wire so it can sign any
   // changes made by other factories (like UniqueRequestIDPolicyFactory)
@@ -198,8 +172,8 @@ export function newPipeline(
     telemetryPolicy,
     generateClientRequestIdPolicy(),
     new StorageBrowserPolicyFactory(),
+    new StorageRetryPolicyFactory(pipelineOptions.retryOptions), // Retry policy should be above any policy that throws retryable errors
     deserializationPolicy(), // Default deserializationPolicy is provided by protocol layer
-    new StorageRetryPolicyFactory(pipelineOptions.retryOptions),
     logPolicy({
       logger: logger.info,
       allowedHeaderNames: StorageDataLakeLoggingAllowedHeaderNames,
@@ -208,14 +182,29 @@ export function newPipeline(
   ];
 
   if (isNode) {
-    // ProxyPolicy is only avaiable in Node.js runtime, not in browsers
+    // policies only available in Node.js runtime, not in browsers
     factories.push(proxyPolicy(pipelineOptions.proxyOptions));
+    factories.push(disableResponseDecompressionPolicy());
   }
   factories.push(
     isTokenCredential(credential)
-      ? bearerTokenAuthenticationPolicy(credential, StorageOAuthScopes)
+      ? attachCredential(
+          bearerTokenAuthenticationPolicy(credential, StorageOAuthScopes),
+          credential
+        )
       : credential
   );
 
   return new Pipeline(factories, pipelineOptions);
+}
+
+/**
+ * Attach a TokenCredential to an object.
+ *
+ * @param thing -
+ * @param credential -
+ */
+function attachCredential<T>(thing: T, credential: TokenCredential): T {
+  (thing as any).credential = credential;
+  return thing;
 }

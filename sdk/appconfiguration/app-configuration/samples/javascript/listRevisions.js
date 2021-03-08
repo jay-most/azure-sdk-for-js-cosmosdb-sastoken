@@ -50,7 +50,7 @@ async function main() {
 }
 
 async function cleanupSampleValues(keys, client) {
-  const settingsIterator = await client.listConfigurationSettings({
+  const settingsIterator = client.listConfigurationSettings({
     keyFilter: keys.join(",")
   });
 
@@ -61,4 +61,5 @@ async function cleanupSampleValues(keys, client) {
 
 main().catch((error) => {
   console.error("Failed to run sample:", error);
+  process.exit(1);
 });

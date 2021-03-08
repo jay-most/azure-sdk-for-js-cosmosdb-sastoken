@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-import uuid from "uuid/v4";
+import { v4 as uuid } from "uuid";
 import { PartitionKeyRange } from "./client/Container/PartitionKeyRange";
 import { Resource } from "./client/Resource";
 import { Constants, HTTPMethod, OperationType, ResourceType } from "./common/constants";
@@ -30,7 +30,7 @@ const QueryJsonContentType = "application/query+json";
 
 /**
  * @hidden
- * @ignore
+ * @hidden
  */
 export class ClientContext {
   private readonly sessionContainer: SessionContainer;
@@ -45,7 +45,7 @@ export class ClientContext {
     this.sessionContainer = new SessionContainer();
     this.partitionKeyDefinitionCache = {};
   }
-  /** @ignore */
+  /** @hidden */
   public async read<T>({
     path,
     resourceType,
@@ -207,7 +207,7 @@ export class ClientContext {
     collectionLink: string,
     query?: string | SqlQuerySpec,
     options?: FeedOptions
-  ) {
+  ): QueryIterator<PartitionKeyRange> {
     const path = getPathFromLink(collectionLink, ResourceType.pkranges);
     const id = getIdFromLink(collectionLink);
     const cb: FetchFunctionCallback = (innerOptions) => {
@@ -334,7 +334,7 @@ export class ClientContext {
     }
   }
 
-  private applySessionToken(requestContext: RequestContext) {
+  private applySessionToken(requestContext: RequestContext): void {
     const request = this.getSessionParams(requestContext.path);
 
     if (requestContext.headers && requestContext.headers[Constants.HttpHeaders.SessionToken]) {
@@ -505,7 +505,7 @@ export class ClientContext {
 
   /**
    * Gets the Database account information.
-   * @param {string} [options.urlConnection]   - The endpoint url whose database account needs to be retrieved. \
+   * @param options - `urlConnection` in the options is the endpoint url whose database account needs to be retrieved.
    * If not present, current client's url will be used.
    */
   public async getDatabaseAccount(
@@ -543,12 +543,61 @@ export class ClientContext {
     return this.globalEndpointManager.getReadEndpoint();
   }
 
+  public async bulk<T>({
+    body,
+    path,
+    resourceId,
+    partitionKeyRangeId,
+    options = {}
+  }: {
+    body: T;
+    path: string;
+    partitionKeyRangeId: string;
+    resourceId: string;
+    options?: RequestOptions;
+  }): Promise<Response<any>> {
+    try {
+      const request: RequestContext = {
+        globalEndpointManager: this.globalEndpointManager,
+        requestAgent: this.cosmosClientOptions.agent,
+        connectionPolicy: this.connectionPolicy,
+        method: HTTPMethod.post,
+        client: this,
+        operationType: OperationType.Batch,
+        path,
+        body,
+        resourceType: ResourceType.item,
+        resourceId,
+        plugins: this.cosmosClientOptions.plugins,
+        options
+      };
+
+      request.headers = await this.buildHeaders(request);
+      request.headers[Constants.HttpHeaders.IsBatchRequest] = true;
+      request.headers[Constants.HttpHeaders.PartitionKeyRangeID] = partitionKeyRangeId;
+      request.headers[Constants.HttpHeaders.IsBatchAtomic] = false;
+
+      this.applySessionToken(request);
+
+      request.endpoint = await this.globalEndpointManager.resolveServiceEndpoint(
+        request.resourceType,
+        request.operationType
+      );
+      const response = await executePlugins(request, executeRequest, PluginOn.operation);
+      this.captureSessionToken(undefined, path, OperationType.Batch, response.headers);
+      return response;
+    } catch (err) {
+      this.captureSessionToken(err, path, OperationType.Upsert, (err as ErrorResponse).headers);
+      throw err;
+    }
+  }
+
   private captureSessionToken(
     err: ErrorResponse,
     path: string,
     operationType: OperationType,
     resHeaders: CosmosHeaders
-  ) {
+  ): void {
     const request = this.getSessionParams(path);
     request.operationType = operationType;
     if (
@@ -563,7 +612,7 @@ export class ClientContext {
     }
   }
 
-  public clearSessionToken(path: string) {
+  public clearSessionToken(path: string): void {
     const request = this.getSessionParams(path);
     this.sessionContainer.remove(request);
   }
@@ -601,7 +650,7 @@ export class ClientContext {
     return false;
   }
 
-  private buildHeaders(requestContext: RequestContext) {
+  private buildHeaders(requestContext: RequestContext): Promise<CosmosHeaders> {
     return getHeaders({
       clientOptions: this.cosmosClientOptions,
       defaultHeaders: {

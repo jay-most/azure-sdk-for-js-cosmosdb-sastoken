@@ -1,5 +1,5 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
 
 import { HttpClient } from "./httpClient";
 import { RetryOptions } from "./policies/exponentialRetryPolicy";
@@ -62,4 +62,14 @@ export interface InternalPipelineOptions extends PipelineOptions {
    * Options to configure request/response logging.
    */
   loggingOptions?: LogPolicyOptions;
+
+  /**
+   * Configure whether to decompress response according to Accept-Encoding header (node-fetch only)
+   */
+  decompressResponse?: boolean;
+
+  /**
+   * Send JSON Array payloads as NDJSON.
+   */
+  sendStreamingJson?: boolean;
 }

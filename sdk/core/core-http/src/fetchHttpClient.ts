@@ -1,15 +1,16 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. See License.txt in the project root for license information.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 import { AbortController, AbortError } from "@azure/abort-controller";
 import FormData from "form-data";
 
 import { HttpClient } from "./httpClient";
-import { TransferProgressEvent, WebResource } from "./webResource";
+import { TransferProgressEvent, WebResourceLike } from "./webResource";
 import { HttpOperationResponse } from "./httpOperationResponse";
-import { HttpHeaders } from "./httpHeaders";
+import { HttpHeaders, HttpHeadersLike } from "./httpHeaders";
 import { RestError } from "./restError";
 import { Readable, Transform } from "stream";
+import { logger } from "./log";
 
 interface FetchError extends Error {
   code?: string;
@@ -17,11 +18,23 @@ interface FetchError extends Error {
   type?: string;
 }
 
-export type CommonRequestInfo = Request | string;
+export type CommonRequestInfo = string; // We only ever call fetch() on string urls.
+
+export type CommonRequestInit = Omit<RequestInit, "body" | "headers" | "signal"> & {
+  body?: any;
+  headers?: any;
+  signal?: any;
+};
+
+export type CommonResponse = Omit<Response, "body" | "trailer" | "formData"> & {
+  body: any;
+  trailer: any;
+  formData: any;
+};
 
 export class ReportTransform extends Transform {
   private loadedBytes: number = 0;
-  _transform(chunk: string | Buffer, _encoding: string, callback: Function) {
+  _transform(chunk: string | Buffer, _encoding: string, callback: (arg: any) => void): void {
     this.push(chunk);
     this.loadedBytes += chunk.length;
     this.progressCallback!({ loadedBytes: this.loadedBytes });
@@ -34,10 +47,10 @@ export class ReportTransform extends Transform {
 }
 
 export abstract class FetchHttpClient implements HttpClient {
-  async sendRequest(httpRequest: WebResource): Promise<HttpOperationResponse> {
+  async sendRequest(httpRequest: WebResourceLike): Promise<HttpOperationResponse> {
     if (!httpRequest && typeof httpRequest !== "object") {
       throw new Error(
-        "'httpRequest' (WebResource) cannot be null or undefined and must be of type object."
+        "'httpRequest' (WebResourceLike) cannot be null or undefined and must be of type object."
       );
     }
 
@@ -65,12 +78,16 @@ export abstract class FetchHttpClient implements HttpClient {
     if (httpRequest.formData) {
       const formData: any = httpRequest.formData;
       const requestForm = new FormData();
-      const appendFormValue = (key: string, value: any) => {
+      const appendFormValue = (key: string, value: any): void => {
         // value function probably returns a stream so we can provide a fresh stream on each retry
         if (typeof value === "function") {
           value = value();
         }
-        if (value && value.hasOwnProperty("value") && value.hasOwnProperty("options")) {
+        if (
+          value &&
+          Object.prototype.hasOwnProperty.call(value, "value") &&
+          Object.prototype.hasOwnProperty.call(value, "options")
+        ) {
           requestForm.append(key, value.value, value.options);
         } else {
           requestForm.append(key, value);
@@ -129,21 +146,28 @@ export abstract class FetchHttpClient implements HttpClient {
       headers: httpRequest.headers.rawHeaders(),
       method: httpRequest.method,
       signal: abortController.signal,
+      redirect: "manual",
       ...platformSpecificRequestInit
     };
 
+    let operationResponse: HttpOperationResponse | undefined;
     try {
-      const response: Response = await this.fetch(httpRequest.url, requestInit);
+      const response: CommonResponse = await this.fetch(httpRequest.url, requestInit);
 
       const headers = parseHeaders(response.headers);
-      const operationResponse: HttpOperationResponse = {
+
+      const streaming =
+        httpRequest.streamResponseStatusCodes?.has(response.status) ||
+        httpRequest.streamResponseBody;
+
+      operationResponse = {
         headers: headers,
         request: httpRequest,
         status: response.status,
-        readableStreamBody: httpRequest.streamResponseBody
+        readableStreamBody: streaming
           ? ((response.body as unknown) as NodeJS.ReadableStream)
           : undefined,
-        bodyAsText: !httpRequest.streamResponseBody ? await response.text() : undefined
+        bodyAsText: !streaming ? await response.text() : undefined
       };
 
       const onDownloadProgress = httpRequest.onDownloadProgress;
@@ -183,21 +207,45 @@ export abstract class FetchHttpClient implements HttpClient {
     } finally {
       // clean up event listener
       if (httpRequest.abortSignal && abortListener) {
-        httpRequest.abortSignal.removeEventListener("abort", abortListener);
+        let uploadStreamDone = Promise.resolve();
+        if (isReadableStream(body)) {
+          uploadStreamDone = isStreamComplete(body);
+        }
+        let downloadStreamDone = Promise.resolve();
+        if (isReadableStream(operationResponse?.readableStreamBody)) {
+          downloadStreamDone = isStreamComplete(operationResponse!.readableStreamBody);
+        }
+
+        Promise.all([uploadStreamDone, downloadStreamDone])
+          .then(() => {
+            httpRequest.abortSignal?.removeEventListener("abort", abortListener!);
+            return;
+          })
+          .catch((e) => {
+            logger.warning("Error when cleaning up abortListener on httpRequest", e);
+          });
       }
     }
   }
 
-  abstract async prepareRequest(httpRequest: WebResource): Promise<Partial<RequestInit>>;
-  abstract async processRequest(operationResponse: HttpOperationResponse): Promise<void>;
-  abstract async fetch(input: CommonRequestInfo, init?: RequestInit): Promise<Response>;
+  abstract prepareRequest(httpRequest: WebResourceLike): Promise<Partial<RequestInit>>;
+  abstract processRequest(operationResponse: HttpOperationResponse): Promise<void>;
+  abstract fetch(input: CommonRequestInfo, init?: CommonRequestInit): Promise<CommonResponse>;
 }
 
 function isReadableStream(body: any): body is Readable {
   return body && typeof body.pipe === "function";
 }
 
-export function parseHeaders(headers: Headers): HttpHeaders {
+function isStreamComplete(stream: Readable): Promise<void> {
+  return new Promise((resolve) => {
+    stream.on("close", resolve);
+    stream.on("end", resolve);
+    stream.on("error", resolve);
+  });
+}
+
+export function parseHeaders(headers: Headers): HttpHeadersLike {
   const httpHeaders = new HttpHeaders();
 
   headers.forEach((value, key) => {

@@ -1,16 +1,21 @@
 // Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
+// Licensed under the MIT license.
+
+/* eslint-disable no-unused-expressions */
 
 import { assert } from "chai";
 import "chai/register-should";
+import * as sinon from "sinon";
 import * as http from "http";
-import { createReadStream } from "fs";
+import { createReadStream, ReadStream } from "fs";
 
 import { DefaultHttpClient } from "../src/defaultHttpClient";
 import { WebResource, TransferProgressEvent } from "../src/webResource";
 import { getHttpMock, HttpMockFacade } from "./mockHttp";
 import { PassThrough } from "stream";
-import { ReportTransform } from "../src/fetchHttpClient";
+import { ReportTransform, CommonResponse } from "../src/fetchHttpClient";
+import { CompositeMapper, Serializer } from "../src/serializer";
+import { OperationSpec } from "../src/operationSpec";
 
 describe("defaultHttpClient (node)", function() {
   let httpMock: HttpMockFacade;
@@ -20,6 +25,16 @@ describe("defaultHttpClient (node)", function() {
   });
   afterEach(() => httpMock.teardown());
   after(() => httpMock.teardown());
+
+  function getMockedHttpClient(): DefaultHttpClient {
+    const httpClient = new DefaultHttpClient();
+    sinon.stub(httpClient, "fetch").callsFake(async (input, init) => {
+      const response = await httpMock.getFetch()!(input, init);
+      return (response as unknown) as CommonResponse;
+    });
+
+    return httpClient;
+  }
 
   it("should not overwrite a user-provided cookie (nodejs only)", async function() {
     // Cookie is only allowed to be set by the browser based on an actual response Set-Cookie header
@@ -37,7 +52,7 @@ describe("defaultHttpClient (node)", function() {
       };
     });
 
-    const client = new DefaultHttpClient();
+    const client = getMockedHttpClient();
 
     const request1 = new WebResource("http://my.fake.domain/set-cookie");
     const response1 = await client.sendRequest(request1);
@@ -84,9 +99,202 @@ describe("defaultHttpClient (node)", function() {
     httpMock.teardown();
   });
 
+  it("should set readableStreamBody for streamming response", async function() {
+    const serializer = new Serializer(undefined, true);
+    const StorageError: CompositeMapper = {
+      serializedName: "StorageError",
+      type: {
+        name: "Composite",
+        className: "StorageError",
+        modelProperties: {
+          message: {
+            xmlName: "Message",
+            serializedName: "Message",
+            type: {
+              name: "String"
+            }
+          },
+          code: {
+            xmlName: "Code",
+            serializedName: "Code",
+            type: {
+              name: "String"
+            }
+          }
+        }
+      }
+    };
+    const operationSpec: OperationSpec = {
+      httpMethod: "GET",
+      responses: {
+        200: {
+          bodyMapper: {
+            serializedName: "parsedResponse",
+            type: {
+              name: "Stream"
+            }
+          }
+        },
+        default: {
+          bodyMapper: StorageError
+        }
+      },
+      isXML: true,
+      baseUrl: "httpbin.org",
+      serializer
+    };
+    httpMock.get("http://my.fake.domain/non-existing-blob", {
+      status: 200,
+      headers: {
+        "Content-Type": "application/xml",
+        "Content-Length": 215
+      },
+      body: `<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.</Message></Error>`
+    });
+    const client = getMockedHttpClient();
+
+    const request = new WebResource("http://my.fake.domain/non-existing-blob");
+    request.operationSpec = operationSpec;
+    request.streamResponseStatusCodes = new Set([200]);
+    const response = await client.sendRequest(request);
+
+    assert.ok(response.readableStreamBody, "Expect stream response body");
+    assert.strictEqual(response.bodyAsText, undefined);
+  });
+
+  it("should not treat non-streaming default response body as stream", async function() {
+    const serializer = new Serializer(undefined, true);
+    const StorageError: CompositeMapper = {
+      serializedName: "StorageError",
+      type: {
+        name: "Composite",
+        className: "StorageError",
+        modelProperties: {
+          message: {
+            xmlName: "Message",
+            serializedName: "Message",
+            type: {
+              name: "String"
+            }
+          },
+          code: {
+            xmlName: "Code",
+            serializedName: "Code",
+            type: {
+              name: "String"
+            }
+          }
+        }
+      }
+    };
+    const operationSpec: OperationSpec = {
+      httpMethod: "GET",
+      responses: {
+        200: {
+          bodyMapper: {
+            serializedName: "parsedResponse",
+            type: {
+              name: "Stream"
+            }
+          }
+        },
+        default: {
+          bodyMapper: StorageError
+        }
+      },
+      isXML: true,
+      baseUrl: "httpbin.org",
+      serializer
+    };
+    httpMock.get("http://my.fake.domain/non-existing-blob", {
+      status: 404,
+      headers: {
+        "Content-Type": "application/xml",
+        "Content-Length": 215
+      },
+      body: `<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.</Message></Error>`
+    });
+    const client = getMockedHttpClient();
+
+    const request = new WebResource("http://my.fake.domain/non-existing-blob");
+    request.operationSpec = operationSpec;
+    request.streamResponseStatusCodes = new Set([200]);
+    const response = await client.sendRequest(request);
+
+    assert.equal(response.readableStreamBody, undefined);
+    assert.strictEqual(
+      response.bodyAsText,
+      `<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.</Message></Error>`
+    );
+  });
+
+  it("should respect deprecated streamResponseBody", async function() {
+    const serializer = new Serializer(undefined, true);
+    const StorageError: CompositeMapper = {
+      serializedName: "StorageError",
+      type: {
+        name: "Composite",
+        className: "StorageError",
+        modelProperties: {
+          message: {
+            xmlName: "Message",
+            serializedName: "Message",
+            type: {
+              name: "String"
+            }
+          },
+          code: {
+            xmlName: "Code",
+            serializedName: "Code",
+            type: {
+              name: "String"
+            }
+          }
+        }
+      }
+    };
+    const operationSpec: OperationSpec = {
+      httpMethod: "GET",
+      responses: {
+        200: {
+          bodyMapper: {
+            serializedName: "parsedResponse",
+            type: {
+              name: "Stream"
+            }
+          }
+        },
+        default: {
+          bodyMapper: StorageError
+        }
+      },
+      isXML: true,
+      baseUrl: "httpbin.org",
+      serializer
+    };
+    httpMock.get("http://my.fake.domain/non-existing-blob", {
+      status: 404,
+      headers: {
+        "Content-Type": "application/xml",
+        "Content-Length": 215
+      },
+      body: `<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.</Message></Error>`
+    });
+    const client = getMockedHttpClient();
+
+    const request = new WebResource("http://my.fake.domain/non-existing-blob");
+    request.operationSpec = operationSpec;
+    // deprecated streamResponseBody property is still supported.
+    request.streamResponseBody = true;
+    const response = await client.sendRequest(request);
+
+    assert.ok(response.readableStreamBody, "Expect stream response body");
+    assert.strictEqual(response.bodyAsText, undefined);
+  });
+
   describe("should report upload and download progress", () => {
     type Notified = { notified: boolean };
-    const listener = (operationStatus: Notified, ev: TransferProgressEvent) => {
+    const listener = (operationStatus: Notified, ev: TransferProgressEvent): void => {
       operationStatus.notified = true;
       if (typeof ProgressEvent !== "undefined") {
         ev.should.not.be.instanceof(ProgressEvent);
@@ -95,7 +303,7 @@ describe("defaultHttpClient (node)", function() {
     };
 
     it("for stream bodies", async function() {
-      let payload = () => createReadStream(__filename);
+      const payload = (): ReadStream => createReadStream(__filename);
 
       const size = payload.toString().length;
 
@@ -124,14 +332,17 @@ describe("defaultHttpClient (node)", function() {
         (ev) => listener(download, ev)
       );
 
-      const client = new DefaultHttpClient();
+      const client = getMockedHttpClient();
+
       const response = await client.sendRequest(request);
       response.status.should.equal(250);
       if (response.blobBody) {
         await response.blobBody;
       } else if (typeof response.readableStreamBody === "function") {
-        const streamBody = (response.readableStreamBody as Function)();
-        streamBody.on("data", () => {});
+        const streamBody = (response.readableStreamBody as () => any)();
+        streamBody.on("data", () => {
+          // Nothing to do here.
+        });
         await new Promise((resolve, reject) => {
           streamBody.on("end", resolve);
           streamBody.on("error", reject);
@@ -148,7 +359,9 @@ describe("ReportTransform", function() {
   it("should not modify the stream data", function() {
     const a = new PassThrough();
     const b = new PassThrough();
-    const callback = () => {};
+    const callback = (): void => {
+      // Nothing to do here.
+    };
     const report = new ReportTransform(callback);
     a.pipe(report, { end: false }).pipe(b, { end: false });
     a.write("hello");

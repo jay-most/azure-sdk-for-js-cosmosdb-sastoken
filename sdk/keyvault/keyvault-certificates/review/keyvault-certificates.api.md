@@ -4,7 +4,6 @@
 
 ```ts
 
-import { CancelOnProgress } from '@azure/core-lro';
 import * as coreHttp from '@azure/core-http';
 import { PagedAsyncIterableIterator } from '@azure/core-paging';
 import { PipelineOptions } from '@azure/core-http';
@@ -47,8 +46,11 @@ export type BeginDeleteCertificateOptions = CertificatePollerOptions;
 export type BeginRecoverDeletedCertificateOptions = CertificatePollerOptions;
 
 // @public
+export type CancelCertificateOperationOptions = coreHttp.OperationOptions;
+
+// @public
 export class CertificateClient {
-    constructor(vaultUrl: string, credential: TokenCredential, pipelineOptions?: PipelineOptions);
+    constructor(vaultUrl: string, credential: TokenCredential, pipelineOptions?: CertificateClientOptions);
     backupCertificate(certificateName: string, options?: BackupCertificateOptions): Promise<Uint8Array | undefined>;
     beginCreateCertificate(certificateName: string, policy: CertificatePolicy, options?: BeginCreateCertificateOptions): Promise<PollerLike<CreateCertificateState, KeyVaultCertificateWithPolicy>>;
     beginDeleteCertificate(certificateName: string, options?: BeginDeleteCertificateOptions): Promise<PollerLike<DeleteCertificateState, DeletedCertificate>>;
@@ -58,7 +60,7 @@ export class CertificateClient {
     deleteContacts(options?: DeleteContactsOptions): Promise<CertificateContact[] | undefined>;
     deleteIssuer(issuerName: string, options?: DeleteIssuerOptions): Promise<CertificateIssuer>;
     getCertificate(certificateName: string, options?: GetCertificateOptions): Promise<KeyVaultCertificateWithPolicy>;
-    getCertificateOperation(certificateName: string, options?: GetCertificateOperationOptions): Promise<KVPollerLike<CertificateOperationState, KeyVaultCertificateWithPolicy>>;
+    getCertificateOperation(certificateName: string, options?: GetCertificateOperationOptions): Promise<PollerLike<CertificateOperationState, KeyVaultCertificateWithPolicy>>;
     getCertificatePolicy(certificateName: string, options?: GetCertificatePolicyOptions): Promise<CertificatePolicy>;
     getCertificateVersion(certificateName: string, version: string, options?: GetCertificateVersionOptions): Promise<KeyVaultCertificate>;
     getContacts(options?: GetContactsOptions): Promise<CertificateContact[] | undefined>;
@@ -77,6 +79,11 @@ export class CertificateClient {
     updateCertificateProperties(certificateName: string, version: string, options?: UpdateCertificateOptions): Promise<KeyVaultCertificate>;
     updateIssuer(issuerName: string, options?: UpdateIssuerOptions): Promise<CertificateIssuer>;
     readonly vaultUrl: string;
+}
+
+// @public
+export interface CertificateClientOptions extends coreHttp.PipelineOptions {
+    serviceVersion?: "7.0" | "7.1" | "7.2";
 }
 
 // @public
@@ -104,10 +111,10 @@ export interface CertificateIssuer extends IssuerProperties {
 }
 
 // @public
-export type CertificateKeyCurveName = "P-256" | "P-384" | "P-521" | "P-256K";
+export type CertificateKeyCurveName = string;
 
 // @public
-export type CertificateKeyType = "EC" | "EC-HSM" | "RSA" | "RSA-HSM";
+export type CertificateKeyType = string;
 
 // @public
 export interface CertificateOperation {
@@ -134,8 +141,7 @@ export interface CertificateOperationError {
 }
 
 // @public
-export interface CertificateOperationState extends PollOperationState<KeyVaultCertificateWithPolicy> {
-    certificateName: string;
+export interface CertificateOperationState extends KeyVaultCertificatePollOperationState<KeyVaultCertificateWithPolicy> {
     certificateOperation?: CertificateOperation;
 }
 
@@ -179,6 +185,7 @@ export interface CertificateProperties {
     readonly id?: string;
     readonly name?: string;
     notBefore?: Date;
+    recoverableDays?: number;
     readonly recoveryLevel?: DeletionRecoveryLevel;
     tags?: CertificateTags;
     readonly updatedOn?: Date;
@@ -204,7 +211,7 @@ export interface CreateCertificateOptions extends CertificateProperties, coreHtt
 }
 
 // @public
-export type CreateCertificateState = PollOperationState<KeyVaultCertificateWithPolicy>;
+export type CreateCertificateState = KeyVaultCertificatePollOperationState<KeyVaultCertificateWithPolicy>;
 
 // @public
 export interface CreateIssuerOptions extends coreHttp.OperationOptions {
@@ -225,7 +232,7 @@ export const DefaultCertificatePolicy: {
 export type DeleteCertificateOperationOptions = coreHttp.OperationOptions;
 
 // @public
-export type DeleteCertificateState = PollOperationState<DeletedCertificate>;
+export type DeleteCertificateState = KeyVaultCertificatePollOperationState<DeletedCertificate>;
 
 // @public
 export type DeleteContactsOptions = coreHttp.OperationOptions;
@@ -241,7 +248,7 @@ export interface DeletedCertificate extends KeyVaultCertificateWithPolicy {
 export type DeleteIssuerOptions = coreHttp.OperationOptions;
 
 // @public
-export type DeletionRecoveryLevel = "Purgeable" | "Recoverable+Purgeable" | "Recoverable" | "Recoverable+ProtectedSubscription";
+export type DeletionRecoveryLevel = string;
 
 // @public
 export interface ErrorModel {
@@ -278,9 +285,12 @@ export type GetPlainCertificateOperationOptions = coreHttp.OperationOptions;
 export interface ImportCertificateOptions extends coreHttp.OperationOptions {
     enabled?: boolean;
     password?: string;
-    policy?: CertificatePolicy;
+    policy?: ImportCertificatePolicy;
     tags?: CertificateTags;
 }
+
+// @public
+export type ImportCertificatePolicy = CertificatePolicyProperties & Partial<PolicySubjectProperties>;
 
 // @public
 export interface IssuerAttributes {
@@ -310,7 +320,7 @@ export interface IssuerProperties {
 }
 
 // @public
-export type KeyUsageType = "digitalSignature" | "nonRepudiation" | "keyEncipherment" | "dataEncipherment" | "keyAgreement" | "keyCertSign" | "cRLSign" | "encipherOnly" | "decipherOnly";
+export type KeyUsageType = string;
 
 // @public
 export interface KeyVaultCertificate {
@@ -323,27 +333,67 @@ export interface KeyVaultCertificate {
 }
 
 // @public
+export interface KeyVaultCertificateId {
+    name: string;
+    sourceId: string;
+    vaultUrl: string;
+    version?: string;
+}
+
+// @public
+export interface KeyVaultCertificatePollOperationState<TResult> extends PollOperationState<TResult> {
+    certificateName: string;
+}
+
+// @public
 export interface KeyVaultCertificateWithPolicy extends KeyVaultCertificate {
     readonly policy?: CertificatePolicy;
 }
 
 // @public
-export interface KVPollerLike<TState extends PollOperationState<TResult>, TResult> {
-    cancelOperation(options?: {
-        abortSignal?: AbortSignal;
-    }): Promise<void>;
-    getOperationState(): TState;
-    getResult(): TResult | undefined;
-    isDone(): boolean;
-    isStopped(): boolean;
-    onProgress(callback: (state: TState) => void): CancelOnProgress;
-    poll(options?: {
-        abortSignal?: AbortSignal;
-    }): Promise<void>;
-    pollUntilDone(): Promise<TResult>;
-    stopPolling(): void;
-    toString(): string;
+export const enum KnownCertificateKeyCurveNames {
+    P256 = "P-256",
+    P256K = "P-256K",
+    P384 = "P-384",
+    P521 = "P-521"
 }
+
+// @public
+export const enum KnownCertificateKeyTypes {
+    EC = "EC",
+    ECHSM = "EC-HSM",
+    Oct = "oct",
+    OctHSM = "oct-HSM",
+    RSA = "RSA",
+    RSAHSM = "RSA-HSM"
+}
+
+// @public
+export const enum KnownDeletionRecoveryLevels {
+    CustomizedRecoverable = "CustomizedRecoverable",
+    CustomizedRecoverableProtectedSubscription = "CustomizedRecoverable+ProtectedSubscription",
+    CustomizedRecoverablePurgeable = "CustomizedRecoverable+Purgeable",
+    Purgeable = "Purgeable",
+    Recoverable = "Recoverable",
+    RecoverableProtectedSubscription = "Recoverable+ProtectedSubscription",
+    RecoverablePurgeable = "Recoverable+Purgeable"
+}
+
+// @public
+export const enum KnownKeyUsageTypes {
+    CRLSign = "cRLSign",
+    DataEncipherment = "dataEncipherment",
+    DecipherOnly = "decipherOnly",
+    DigitalSignature = "digitalSignature",
+    EncipherOnly = "encipherOnly",
+    KeyAgreement = "keyAgreement",
+    KeyCertSign = "keyCertSign",
+    KeyEncipherment = "keyEncipherment",
+    NonRepudiation = "nonRepudiation"
+}
+
+// @public
+export type KVPollerLike<TState extends PollOperationState<TResult>, TResult> = PollerLike<TState, TResult>;
 
 // @public
 export interface LifetimeAction {
@@ -388,7 +438,7 @@ export { PollerLike }
 export type PurgeDeletedCertificateOptions = coreHttp.OperationOptions;
 
 // @public
-export type RecoverDeletedCertificateState = PollOperationState<KeyVaultCertificateWithPolicy>;
+export type RecoverDeletedCertificateState = KeyVaultCertificatePollOperationState<KeyVaultCertificateWithPolicy>;
 
 // @public
 export type RequireAtLeastOne<T> = {

@@ -7,7 +7,7 @@ import {
   TextAnalyticsErrorResult,
   makeTextAnalyticsErrorResult
 } from "./textAnalyticsResult";
-import { TextDocumentStatistics, TextAnalyticsError } from "./generated/models";
+import { TextAnalyticsError, DocumentKeyPhrases } from "./generated/models";
 
 /**
  * The result of the extract key phrases operation on a single document.
@@ -29,19 +29,24 @@ export interface ExtractKeyPhrasesSuccessResult extends TextAnalyticsSuccessResu
 /**
  * An error result from the extract key phrases operation on a single document.
  */
-export type ExtractKeyPhrasesErrorResult = TextAnalyticsErrorResult
+export type ExtractKeyPhrasesErrorResult = TextAnalyticsErrorResult;
 
+/**
+ * @internal
+ */
 export function makeExtractKeyPhrasesResult(
-  id: string,
-  keyPhrases: string[],
-  statistics?: TextDocumentStatistics
+  result: DocumentKeyPhrases
 ): ExtractKeyPhrasesSuccessResult {
+  const { id, warnings, statistics, keyPhrases } = result;
   return {
-    ...makeTextAnalyticsSuccessResult(id, statistics),
+    ...makeTextAnalyticsSuccessResult(id, warnings, statistics),
     keyPhrases
   };
 }
 
+/**
+ * @internal
+ */
 export function makeExtractKeyPhrasesErrorResult(
   id: string,
   error: TextAnalyticsError

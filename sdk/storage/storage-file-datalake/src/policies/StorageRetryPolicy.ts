@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { AbortError } from "@azure/abort-controller";
 import {
   AbortSignalLike,
@@ -20,9 +20,7 @@ import { logger } from "../log";
 /**
  * A factory method used to generated a RetryPolicy factory.
  *
- * @export
- * @param {StorageRetryOptions} retryOptions
- * @returns
+ * @param retryOptions -
  */
 export function NewRetryPolicyFactory(retryOptions?: StorageRetryOptions): RequestPolicyFactory {
   return {
@@ -34,9 +32,6 @@ export function NewRetryPolicyFactory(retryOptions?: StorageRetryOptions): Reque
 
 /**
  * RetryPolicy types.
- *
- * @export
- * @enum {number}
  */
 export enum StorageRetryPolicyType {
   /**
@@ -63,27 +58,19 @@ const RETRY_ABORT_ERROR = new AbortError("The operation was aborted.");
 
 /**
  * Retry policy with exponential retry and linear retry implemented.
- *
- * @class RetryPolicy
- * @extends {BaseRequestPolicy}
  */
 export class StorageRetryPolicy extends BaseRequestPolicy {
   /**
    * RetryOptions.
-   *
-   * @private
-   * @type {StorageRetryOptions}
-   * @memberof StorageRetryPolicy
    */
   private readonly retryOptions: StorageRetryOptions;
 
   /**
    * Creates an instance of RetryPolicy.
    *
-   * @param {RequestPolicy} nextPolicy
-   * @param {RequestPolicyOptions} options
-   * @param {StorageRetryOptions} [retryOptions=DEFAULT_RETRY_OPTIONS]
-   * @memberof StorageRetryPolicy
+   * @param nextPolicy -
+   * @param options -
+   * @param retryOptions -
    */
   constructor(
     nextPolicy: RequestPolicy,
@@ -132,9 +119,7 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
   /**
    * Sends request.
    *
-   * @param {WebResource} request
-   * @returns {Promise<HttpOperationResponse>}
-   * @memberof StorageRetryPolicy
+   * @param request -
    */
   public async sendRequest(request: WebResource): Promise<HttpOperationResponse> {
     return this.attemptSendRequest(request, false, 1);
@@ -143,15 +128,12 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
   /**
    * Decide and perform next retry. Won't mutate request parameter.
    *
-   * @protected
-   * @param {WebResource} request
-   * @param {boolean} secondaryHas404  If attempt was against the secondary & it returned a StatusNotFound (404), then
+   * @param request -
+   * @param secondaryHas404 -  If attempt was against the secondary & it returned a StatusNotFound (404), then
    *                                   the resource was not found. This may be due to replication delay. So, in this
    *                                   case, we'll never try the secondary again for this operation.
-   * @param {number} attempt           How many retries has been attempted to performed, starting from 1, which includes
+   * @param attempt -           How many retries has been attempted to performed, starting from 1, which includes
    *                                   the attempt will be performed by this method call.
-   * @returns {Promise<HttpOperationResponse>}
-   * @memberof StorageRetryPolicy
    */
   protected async attemptSendRequest(
     request: WebResource,
@@ -181,9 +163,7 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
 
     let response: HttpOperationResponse | undefined;
     try {
-      logger.info(
-        `RetryPolicy: =====> Try=${attempt} ${isPrimaryRetry ? "Primary" : "Secondary"}`
-      );
+      logger.info(`RetryPolicy: =====> Try=${attempt} ${isPrimaryRetry ? "Primary" : "Secondary"}`);
       response = await this._nextPolicy.sendRequest(newRequest);
       if (!this.shouldRetry(isPrimaryRetry, attempt, response)) {
         return response;
@@ -191,9 +171,7 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
 
       secondaryHas404 = secondaryHas404 || (!isPrimaryRetry && response.status === 404);
     } catch (err) {
-      logger.error(
-        `RetryPolicy: Caught error, message: ${err.message}, code: ${err.code}`
-      );
+      logger.error(`RetryPolicy: Caught error, message: ${err.message}, code: ${err.code}`);
       if (!this.shouldRetry(isPrimaryRetry, attempt, response, err)) {
         throw err;
       }
@@ -206,13 +184,10 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
   /**
    * Decide whether to retry according to last HTTP response and retry counters.
    *
-   * @protected
-   * @param {boolean} isPrimaryRetry
-   * @param {number} attempt
-   * @param {HttpOperationResponse} [response]
-   * @param {RestError} [err]
-   * @returns {boolean}
-   * @memberof StorageRetryPolicy
+   * @param isPrimaryRetry -
+   * @param attempt -
+   * @param response -
+   * @param err -
    */
   protected shouldRetry(
     isPrimaryRetry: boolean,
@@ -246,15 +221,9 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
         if (
           err.name.toUpperCase().includes(retriableError) ||
           err.message.toUpperCase().includes(retriableError) ||
-          (err.code &&
-            err.code
-              .toString()
-              .toUpperCase()
-              .includes(retriableError))
+          (err.code && err.code.toString().toUpperCase() === retriableError)
         ) {
-          logger.info(
-            `RetryPolicy: Network error ${retriableError} found, will retry.`
-          );
+          logger.info(`RetryPolicy: Network error ${retriableError} found, will retry.`);
           return true;
         }
       }
@@ -272,11 +241,16 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
 
       // Server internal error or server timeout
       if (statusCode === 503 || statusCode === 500) {
-        logger.info(
-          `RetryPolicy: Will retry for status code ${statusCode}.`
-        );
+        logger.info(`RetryPolicy: Will retry for status code ${statusCode}.`);
         return true;
       }
+    }
+
+    if (err?.code === "PARSE_ERROR" && err?.message.startsWith(`Error "Error: Unclosed root tag`)) {
+      logger.info(
+        "RetryPolicy: Incomplete XML response likely due to service timeout, will retry."
+      );
+      return true;
     }
 
     return false;
@@ -285,11 +259,9 @@ export class StorageRetryPolicy extends BaseRequestPolicy {
   /**
    * Delay a calculated time between retries.
    *
-   * @private
-   * @param {boolean} isPrimaryRetry
-   * @param {number} attempt
-   * @param {AbortSignalLike} [abortSignal]
-   * @memberof StorageRetryPolicy
+   * @param isPrimaryRetry -
+   * @param attempt -
+   * @param abortSignal -
    */
   private async delay(isPrimaryRetry: boolean, attempt: number, abortSignal?: AbortSignalLike) {
     let delayTimeInMs: number = 0;
